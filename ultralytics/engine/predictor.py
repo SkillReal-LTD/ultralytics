@@ -162,7 +162,9 @@ class BasePredictor:
             im = np.stack(self.pre_transform(im))
             if im.shape[-1] == 3:
                 im = im[..., ::-1]  # BGR to RGB
-            im = im.transpose((0, 3, 1, 2))  # BHWC to BCHW, (n, 3, h, w)
+            elif im.shape[-1] == 1 or im.shape[0] == 1 or im.ndim == 2:
+                im = np.expand_dims(im, -1) # Grayscale (H, W) to (H, W, 1)
+            im = im.transpose((0, 3, 1, 2))  # BHWC to BCHW, (n, c, h, w)
             im = np.ascontiguousarray(im)  # contiguous
             im = torch.from_numpy(im)
 
@@ -305,6 +307,7 @@ class BasePredictor:
 
             # Warmup model
             if not self.done_warmup:
+                self.model.ch = 1
                 self.model.warmup(
                     imgsz=(1 if self.model.pt or self.model.triton else self.dataset.bs, self.model.ch, *self.imgsz)
                 )
