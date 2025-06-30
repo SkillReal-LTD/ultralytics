@@ -429,7 +429,7 @@ def check_det_dataset(dataset: str, autodownload: bool = True) -> Dict:
         data["nc"] = len(data["names"])
 
     data["names"] = check_class_names(data["names"])
-    data["channels"] = data.get("channels", 3)  # get image channels, default to 3
+    data["channels"] = data.get("channels", 1)  # get image channels, default to 1
 
     # Resolve paths
     path = Path(extract_dir or data.get("path") or Path(data.get("yaml_file", "")).parent)  # dataset root
@@ -567,7 +567,7 @@ def check_cls_dataset(dataset: Union[str, Path], split: str = "") -> Dict:
             else:
                 LOGGER.info(f"{prefix} found {nf} images in {nd} classes ✅ ")
 
-    return {"train": train_set, "val": val_set, "test": test_set, "nc": nc, "names": names, "channels": 3}
+    return {"train": train_set, "val": val_set, "test": test_set, "nc": nc, "names": names, "channels": 1}
 
 
 class HUBDatasetStats:

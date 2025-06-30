@@ -91,7 +91,7 @@ class LoadStreams:
         - The class implements a buffer system to manage frame storage and retrieval.
     """
 
-    def __init__(self, sources: str = "file.streams", vid_stride: int = 1, buffer: bool = False, channels: int = 3):
+    def __init__(self, sources: str = "file.streams", vid_stride: int = 1, buffer: bool = False, channels: int = 1):
         """
         Initialize stream loader for multiple video sources, supporting various stream types.
 
@@ -256,7 +256,7 @@ class LoadScreenshots:
         ...     print(f"Captured frame: {im.shape}")
     """
 
-    def __init__(self, source: str, channels: int = 3):
+    def __init__(self, source: str, channels: int = 1):
         """
         Initialize screenshot capture with specified screen and region parameters.
 
@@ -344,7 +344,7 @@ class LoadImagesAndVideos:
         - Can read from a text file containing paths to images and videos.
     """
 
-    def __init__(self, path: Union[str, Path, List], batch: int = 1, vid_stride: int = 1, channels: int = 3):
+    def __init__(self, path: Union[str, Path, List], batch: int = 1, vid_stride: int = 1, channels: int = 1):
         """
         Initialize dataloader for images and videos, supporting various input formats.
 
@@ -513,7 +513,7 @@ class LoadPilAndNumpy:
         Loaded 2 images
     """
 
-    def __init__(self, im0: Union[Image.Image, np.ndarray, List], channels: int = 3):
+    def __init__(self, im0: Union[Image.Image, np.ndarray, List], channels: int = 1):
         """
         Initialize a loader for PIL and Numpy images, converting inputs to a standardized format.
 

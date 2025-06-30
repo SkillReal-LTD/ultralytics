@@ -82,7 +82,7 @@ class BaseDataset(Dataset):
         single_cls: bool = False,
         classes: Optional[List[int]] = None,
         fraction: float = 1.0,
-        channels: int = 3,
+        channels: int = 1,
     ):
         """
         Initialize BaseDataset with given configuration and options.

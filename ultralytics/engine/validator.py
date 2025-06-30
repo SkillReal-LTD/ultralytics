@@ -186,6 +186,10 @@ class BaseValidator:
             self.dataloader = self.dataloader or self.get_dataloader(self.data.get(self.args.split), self.args.batch)
 
             model.eval()
+            if self.data["channels"] != 1:
+                LOGGER.warning(f"Model channels mismatch: {self.data['channels']} != 1")
+                LOGGER.warning("Modify the model to use 1 channel")
+                self.data["channels"] = 1
             model.warmup(imgsz=(1 if pt else self.args.batch, self.data["channels"], imgsz, imgsz))  # warmup
 
         self.run_callbacks("on_val_start")
