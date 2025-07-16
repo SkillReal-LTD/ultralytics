@@ -48,7 +48,7 @@ class SegmentationValidator(DetectionValidator):
         super().__init__(dataloader, save_dir, args, _callbacks)
         self.process = None
         self.args.task = "segment"
-        self.metrics = SegmentMetrics()
+        self.metrics = SegmentMetrics(fitness_weight=getattr(self.args, 'fitness_weight', None))
 
     def preprocess(self, batch: Dict[str, Any]) -> Dict[str, Any]:
         """

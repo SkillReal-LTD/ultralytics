@@ -74,7 +74,7 @@ class PoseValidator(DetectionValidator):
         self.sigma = None
         self.kpt_shape = None
         self.args.task = "pose"
-        self.metrics = PoseMetrics()
+        self.metrics = PoseMetrics(fitness_weight=getattr(self.args, 'fitness_weight', None))
         if isinstance(self.args.device, str) and self.args.device.lower() == "mps":
             LOGGER.warning(
                 "Apple MPS known Pose bug. Recommend 'device=cpu' for Pose models. "

@@ -57,7 +57,7 @@ class DetectionValidator(BaseValidator):
         self.args.task = "detect"
         self.iouv = torch.linspace(0.5, 0.95, 10)  # IoU vector for mAP@0.5:0.95
         self.niou = self.iouv.numel()
-        self.metrics = DetMetrics()
+        self.metrics = DetMetrics(fitness_weight=getattr(self.args, 'fitness_weight', None))
 
     def preprocess(self, batch: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -98,6 +98,10 @@ class DetectionValidator(BaseValidator):
         self.seen = 0
         self.jdict = []
         self.metrics.names = self.names
+        # Update metrics with fitness_weight from config if needed
+        if not hasattr(self.metrics.box, 'fitness_weight') or self.metrics.box.fitness_weight == [0.0, 0.0, 0.1, 0.9]:
+            fitness_weight = getattr(self.args, 'fitness_weight', [0.0, 0.0, 0.1, 0.9])
+            self.metrics.box.fitness_weight = fitness_weight
         self.confusion_matrix = ConfusionMatrix(names=list(model.names.values()))
 
     def get_desc(self) -> str:
