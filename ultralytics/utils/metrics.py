@@ -897,7 +897,6 @@ class Metric(SimpleClass):
         # weights for [P, R, mAP@0.5, mAP@0.5:0.95]
         w = self.fitness_weight 
         
-        print(f"*****************Fitness weight: {w}******************************")
         return (np.nan_to_num(np.array(self.mean_results())) * w).sum()
 
     def update(self, results: tuple):
