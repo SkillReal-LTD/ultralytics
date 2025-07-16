@@ -779,6 +779,7 @@ class Metric(SimpleClass):
         all_ap (list): AP scores for all classes and all IoU thresholds. Shape: (nc, 10).
         ap_class_index (list): Index of class for each AP score. Shape: (nc,).
         nc (int): Number of classes.
+        fitness_weight (list): Weights for fitness calculation.
 
     Methods:
         ap50(): AP at IoU threshold of 0.5 for all classes. Returns: List of AP scores. Shape: (nc,) or [].
@@ -795,7 +796,7 @@ class Metric(SimpleClass):
         update(results): Update metric attributes with new evaluation results.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, fitness_weight=None) -> None:
         """Initialize a Metric instance for computing evaluation metrics for the YOLOv8 model."""
         self.p = []  # (nc, )
         self.r = []  # (nc, )
@@ -803,6 +804,7 @@ class Metric(SimpleClass):
         self.all_ap = []  # (nc, 10)
         self.ap_class_index = []  # (nc, )
         self.nc = 0
+        self.fitness_weight = fitness_weight or [0.0, 0.0, 0.1, 0.9]  # default weights
 
     @property
     def ap50(self) -> Union[np.ndarray, List]:
@@ -892,7 +894,10 @@ class Metric(SimpleClass):
 
     def fitness(self) -> float:
         """Return model fitness as a weighted combination of metrics."""
-        w = [0.0, 0.0, 0.1, 0.9]  # weights for [P, R, mAP@0.5, mAP@0.5:0.95]
+        # weights for [P, R, mAP@0.5, mAP@0.5:0.95]
+        w = self.fitness_weight 
+        
+        print(f"*****************Fitness weight: {w}******************************")
         return (np.nan_to_num(np.array(self.mean_results())) * w).sum()
 
     def update(self, results: tuple):
@@ -955,15 +960,16 @@ class DetMetrics(SimpleClass, DataExportMixin):
         nt_per_image: Number of targets per image.
     """
 
-    def __init__(self, names: Dict[int, str] = {}) -> None:
+    def __init__(self, names: Dict[int, str] = {}, fitness_weight: list = None) -> None:
         """
         Initialize a DetMetrics instance with a save directory, plot flag, and class names.
 
         Args:
             names (Dict[int, str], optional): Dictionary of class names.
+            fitness_weight (list, optional): Weights for fitness calculation [P, R, mAP@0.5, mAP@0.5:0.95].
         """
         self.names = names
-        self.box = Metric()
+        self.box = Metric(fitness_weight=fitness_weight)
         self.speed = {"preprocess": 0.0, "inference": 0.0, "loss": 0.0, "postprocess": 0.0}
         self.task = "detect"
         self.stats = dict(tp=[], conf=[], pred_cls=[], target_cls=[], target_img=[])
@@ -1111,15 +1117,16 @@ class SegmentMetrics(DetMetrics):
         nt_per_image: Number of targets per image.
     """
 
-    def __init__(self, names: Dict[int, str] = {}) -> None:
+    def __init__(self, names: Dict[int, str] = {}, fitness_weight: list = None) -> None:
         """
         Initialize a SegmentMetrics instance with a save directory, plot flag, and class names.
 
         Args:
             names (Dict[int, str], optional): Dictionary of class names.
+            fitness_weight (list, optional): Weights for fitness calculation [P, R, mAP@0.5, mAP@0.5:0.95].
         """
-        DetMetrics.__init__(self, names)
-        self.seg = Metric()
+        DetMetrics.__init__(self, names, fitness_weight)
+        self.seg = Metric(fitness_weight=fitness_weight)
         self.task = "segment"
         self.stats["tp_m"] = []  # add additional stats for masks
 
@@ -1246,15 +1253,16 @@ class PoseMetrics(DetMetrics):
         results_dict: Return the dictionary containing all the detection and segmentation metrics and fitness score.
     """
 
-    def __init__(self, names: Dict[int, str] = {}) -> None:
+    def __init__(self, names: Dict[int, str] = {}, fitness_weight: list = None) -> None:
         """
         Initialize the PoseMetrics class with directory path, class names, and plotting options.
 
         Args:
             names (Dict[int, str], optional): Dictionary of class names.
+            fitness_weight (list, optional): Weights for fitness calculation [P, R, mAP@0.5, mAP@0.5:0.95].
         """
-        super().__init__(names)
-        self.pose = Metric()
+        super().__init__(names, fitness_weight)
+        self.pose = Metric(fitness_weight=fitness_weight)
         self.task = "pose"
         self.stats["tp_p"] = []  # add additional stats for pose
 
@@ -1453,13 +1461,14 @@ class OBBMetrics(DetMetrics):
         https://arxiv.org/pdf/2106.06072.pdf
     """
 
-    def __init__(self, names: Dict[int, str] = {}) -> None:
+    def __init__(self, names: Dict[int, str] = {}, fitness_weight: list = None) -> None:
         """
         Initialize an OBBMetrics instance with directory, plotting, and class names.
 
         Args:
             names (Dict[int, str], optional): Dictionary of class names.
+            fitness_weight (list, optional): Weights for fitness calculation [P, R, mAP@0.5, mAP@0.5:0.95].
         """
-        DetMetrics.__init__(self, names)
+        DetMetrics.__init__(self, names, fitness_weight)
         # TODO: probably remove task as well
         self.task = "obb"
