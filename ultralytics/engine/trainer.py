@@ -613,6 +613,13 @@ class BaseTrainer:
             LOGGER.info("Overriding class names with single class.")
             data["names"] = {0: "item"}
             data["nc"] = 1
+        
+        # Override channels if specified in args
+        if hasattr(self.args, 'channels') and self.args.channels is not None:
+            if 'channels' in data and data['channels'] != self.args.channels:
+                LOGGER.info(f"Overriding dataset channels from {data.get('channels', 3)} to {self.args.channels}")
+            data['channels'] = self.args.channels
+        
         return data
 
     def setup_model(self):
