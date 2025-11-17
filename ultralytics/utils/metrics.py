@@ -770,7 +770,7 @@ def ap_per_class(
 
 class Metric(SimpleClass):
     """
-    Class for computing evaluation metrics for Ultralytics YOLO models.
+    Class for computing evaluation metrics for YOLOv8 model.
 
     Attributes:
         p (list): Precision for each class. Shape: (nc,).
@@ -779,7 +779,7 @@ class Metric(SimpleClass):
         all_ap (list): AP scores for all classes and all IoU thresholds. Shape: (nc, 10).
         ap_class_index (list): Index of class for each AP score. Shape: (nc,).
         nc (int): Number of classes.
-        fitness_weight (list): Weights for fitness calculation.
+        fitness_weight (list): Weights for fitness calculation [P, R, mAP@0.5, mAP@0.5:0.95].
 
     Methods:
         ap50(): AP at IoU threshold of 0.5 for all classes. Returns: List of AP scores. Shape: (nc,) or [].
@@ -1122,10 +1122,27 @@ class SegmentMetrics(DetMetrics):
 
         Args:
             names (Dict[int, str], optional): Dictionary of class names.
-            fitness_weight (list, optional): Weights for fitness calculation [P, R, mAP@0.5, mAP@0.5:0.95].
+            fitness_weight (list, optional): Weights for fitness calculation.
+                - 4 values [P, R, mAP@0.5, mAP@0.5:0.95]: same weights used for both box and mask (backward compatible)
+                - 8 values [box_P, box_R, box_mAP@0.5, box_mAP@0.5:0.95, mask_P, mask_R, mask_mAP@0.5, mask_mAP@0.5:0.95]:
+                  separate weights for box and mask metrics
         """
-        DetMetrics.__init__(self, names, fitness_weight)
-        self.seg = Metric(fitness_weight=fitness_weight)
+        # Split fitness weights for box and mask metrics
+        if fitness_weight and len(fitness_weight) == 8:
+            # New format: separate weights for box and mask
+            box_weights = fitness_weight[:4]
+            mask_weights = fitness_weight[4:]
+        elif fitness_weight and len(fitness_weight) == 4:
+            # Backward compatibility: use same weights for both
+            box_weights = fitness_weight
+            mask_weights = fitness_weight
+        else:
+            # Default or None
+            box_weights = fitness_weight
+            mask_weights = fitness_weight
+
+        DetMetrics.__init__(self, names, box_weights)
+        self.seg = Metric(fitness_weight=mask_weights)
         self.task = "segment"
         self.stats["tp_m"] = []  # add additional stats for masks
 
@@ -1258,10 +1275,27 @@ class PoseMetrics(DetMetrics):
 
         Args:
             names (Dict[int, str], optional): Dictionary of class names.
-            fitness_weight (list, optional): Weights for fitness calculation [P, R, mAP@0.5, mAP@0.5:0.95].
+            fitness_weight (list, optional): Weights for fitness calculation.
+                - 4 values [P, R, mAP@0.5, mAP@0.5:0.95]: same weights used for both box and pose (backward compatible)
+                - 8 values [box_P, box_R, box_mAP@0.5, box_mAP@0.5:0.95, pose_P, pose_R, pose_mAP@0.5, pose_mAP@0.5:0.95]:
+                  separate weights for box and pose metrics
         """
-        super().__init__(names, fitness_weight)
-        self.pose = Metric(fitness_weight=fitness_weight)
+        # Split fitness weights for box and pose metrics
+        if fitness_weight and len(fitness_weight) == 8:
+            # New format: separate weights for box and pose
+            box_weights = fitness_weight[:4]
+            pose_weights = fitness_weight[4:]
+        elif fitness_weight and len(fitness_weight) == 4:
+            # Backward compatibility: use same weights for both
+            box_weights = fitness_weight
+            pose_weights = fitness_weight
+        else:
+            # Default or None
+            box_weights = fitness_weight
+            pose_weights = fitness_weight
+
+        super().__init__(names, box_weights)
+        self.pose = Metric(fitness_weight=pose_weights)
         self.task = "pose"
         self.stats["tp_p"] = []  # add additional stats for pose
 
