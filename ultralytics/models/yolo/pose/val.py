@@ -74,7 +74,18 @@ class PoseValidator(DetectionValidator):
         self.sigma = None
         self.kpt_shape = None
         self.args.task = "pose"
-        self.metrics = PoseMetrics(fitness_weight=getattr(self.args, 'fitness_weight', None))
+
+        # Validate fitness_weight length for pose task
+        fitness_weight = getattr(self.args, 'fitness_weight', None)
+        if fitness_weight is not None and len(fitness_weight) not in [4, 8]:
+            LOGGER.warning(
+                f"fitness_weight must have 4 or 8 values for pose task, got {len(fitness_weight)}. "
+                f"Using default weights. Expected: [P, R, mAP@0.5, mAP@0.5:0.95] (4 values) or "
+                f"[box_P, box_R, box_mAP@0.5, box_mAP@0.5:0.95, pose_P, pose_R, pose_mAP@0.5, pose_mAP@0.5:0.95] (8 values)."
+            )
+            fitness_weight = None
+
+        self.metrics = PoseMetrics(fitness_weight=fitness_weight)
         if isinstance(self.args.device, str) and self.args.device.lower() == "mps":
             LOGGER.warning(
                 "Apple MPS known Pose bug. Recommend 'device=cpu' for Pose models. "

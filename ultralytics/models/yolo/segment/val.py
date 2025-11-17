@@ -48,7 +48,18 @@ class SegmentationValidator(DetectionValidator):
         super().__init__(dataloader, save_dir, args, _callbacks)
         self.process = None
         self.args.task = "segment"
-        self.metrics = SegmentMetrics(fitness_weight=getattr(self.args, 'fitness_weight', None))
+
+        # Validate fitness_weight length for segment task
+        fitness_weight = getattr(self.args, 'fitness_weight', None)
+        if fitness_weight is not None and len(fitness_weight) not in [4, 8]:
+            LOGGER.warning(
+                f"fitness_weight must have 4 or 8 values for segment task, got {len(fitness_weight)}. "
+                f"Using default weights. Expected: [P, R, mAP@0.5, mAP@0.5:0.95] (4 values) or "
+                f"[box_P, box_R, box_mAP@0.5, box_mAP@0.5:0.95, mask_P, mask_R, mask_mAP@0.5, mask_mAP@0.5:0.95] (8 values)."
+            )
+            fitness_weight = None
+
+        self.metrics = SegmentMetrics(fitness_weight=fitness_weight)
 
     def preprocess(self, batch: Dict[str, Any]) -> Dict[str, Any]:
         """
