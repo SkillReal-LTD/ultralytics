@@ -9,7 +9,7 @@ results = model.train(
     epochs=10,
     imgsz=640,
     batch=16,
-    # fitness_weight=[0.0, 0.9, 0.1, 0.0],
+    fitness_weight=[0.0, 0.9, 0.1, 0.0],
     classes=[11]
 )
 print(model.names)
