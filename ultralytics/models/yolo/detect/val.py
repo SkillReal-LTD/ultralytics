@@ -99,7 +99,9 @@ class DetectionValidator(BaseValidator):
         self.jdict = []
         self.metrics.names = self.names
         # Update metrics with fitness_weight from config if needed
-        if not hasattr(self.metrics.box, 'fitness_weight') or self.metrics.box.fitness_weight == [0.0, 0.0, 0.1, 0.9]:
+        # For DetectionValidator, update self.metrics.box.fitness_weight directly
+        # For PoseValidator/SegmentValidator, the weights are already split in __init__, so skip this
+        if self.args.task == 'detect' and (not hasattr(self.metrics.box, 'fitness_weight') or self.metrics.box.fitness_weight == [0.0, 0.0, 0.1, 0.9]):
             fitness_weight = getattr(self.args, 'fitness_weight', [0.0, 0.0, 0.1, 0.9])
             self.metrics.box.fitness_weight = fitness_weight
         self.confusion_matrix = ConfusionMatrix(names=list(model.names.values()))
