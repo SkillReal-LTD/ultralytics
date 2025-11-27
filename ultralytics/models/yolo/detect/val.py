@@ -101,8 +101,8 @@ class DetectionValidator(BaseValidator):
         # Update metrics with fitness_weight from config if needed
         # For DetectionValidator, update self.metrics.box.fitness_weight directly
         # For PoseValidator/SegmentValidator, the weights are already split in __init__, so skip this
-        if self.args.task == 'detect' and (not hasattr(self.metrics.box, 'fitness_weight') or self.metrics.box.fitness_weight == [0.0, 0.0, 0.1, 0.9]):
-            fitness_weight = getattr(self.args, 'fitness_weight', [0.0, 0.0, 0.1, 0.9])
+        if self.args.task == 'detect' and (not hasattr(self.metrics.box, 'fitness_weight') or self.metrics.box.fitness_weight == [0.0, 0.9, 0.1, 0.0]):
+            fitness_weight = getattr(self.args, 'fitness_weight', [0.0, 0.9, 0.1, 0.0]) # default for SkillReal dataset
             self.metrics.box.fitness_weight = fitness_weight
         self.confusion_matrix = ConfusionMatrix(names=list(model.names.values()))
 
