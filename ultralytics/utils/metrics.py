@@ -12,9 +12,9 @@ import torch
 from ultralytics.utils import LOGGER, DataExportMixin, SimpleClass, TryExcept, checks, plt_settings
 
 OKS_SIGMA = (
-    np.array([0.26, 0.25, 0.25, 0.35, 0.35, 0.79, 0.79, 0.72, 0.72, 0.62, 0.62, 1.07, 1.07, 0.87, 0.87, 0.89, 0.89])
+    np.array([0.1, 0.1, 0.1, 0.1, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2])
     / 10.0
-)
+) # default for SkillReal dataset
 
 
 def bbox_ioa(box1: np.ndarray, box2: np.ndarray, iou: bool = False, eps: float = 1e-7) -> np.ndarray:
@@ -804,7 +804,7 @@ class Metric(SimpleClass):
         self.all_ap = []  # (nc, 10)
         self.ap_class_index = []  # (nc, )
         self.nc = 0
-        self.fitness_weight = fitness_weight or [0.0, 0.0, 0.1, 0.9]  # default weights
+        self.fitness_weight = fitness_weight or [0.0, 0.9, 0.1, 0.0]  # default weights for SkillReal dataset
 
     @property
     def ap50(self) -> Union[np.ndarray, List]:
