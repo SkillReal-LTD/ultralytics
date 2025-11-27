@@ -597,7 +597,7 @@ class BaseTrainer:
         # Get fitness weights from args if available
         fitness_weight = getattr(self.args, 'fitness_weight', None)
         if fitness_weight is None:
-            fitness_weight = [0.0, 0.0, 0.1, 0.9]  # default
+            fitness_weight = [0.0, 0.9, 0.1, 0.0]  # default for SkillReal dataset
 
         # Determine task type and metric names
         task = getattr(self.args, 'task', 'detect')
