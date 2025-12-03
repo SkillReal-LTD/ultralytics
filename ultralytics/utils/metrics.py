@@ -870,7 +870,11 @@ class Metric(SimpleClass):
         self.all_ap = []  # (nc, 10)
         self.ap_class_index = []  # (nc, )
         self.nc = 0
-        self.fitness_weight = fitness_weight or [0.0, 0.9, 0.1, 0.0]  # default weights for SkillReal dataset
+        # Handle fitness_weight: if 8 values provided, use only first 4 for detection metrics
+        if fitness_weight and len(fitness_weight) == 8:
+            self.fitness_weight = fitness_weight[:4]  # use first 4 for box detection
+        else:
+            self.fitness_weight = fitness_weight or [0.0, 0.9, 0.1, 0.0]  # default weights for SkillReal dataset
 
     @property
     def ap50(self) -> np.ndarray | list:
@@ -952,10 +956,12 @@ class Metric(SimpleClass):
         return maps
 
     def fitness(self) -> float:
-        """Return model fitness as a weighted combination of metrics."""
-        # weights for [P, R, mAP@0.5, mAP@0.5:0.95]
-        w = self.fitness_weight 
-        
+        """Return model fitness as a weighted combination of metrics.
+
+        Note: fitness_weight is automatically sliced to 4 values in __init__ if 8 values are provided,
+        ensuring compatibility with detection task metrics [P, R, mAP@0.5, mAP@0.5:0.95].
+        """
+        w = self.fitness_weight
         return (np.nan_to_num(np.array(self.mean_results())) * w).sum()
 
     def update(self, results: tuple):
