@@ -39,7 +39,7 @@ freeze: # (int | list, optional) freeze first N layers (int) or specific layer i
 multi_scale: False # (bool) multiscale training by varying image size
 compile: False # (bool | str) enable torch.compile() backend='inductor'; True="default", False=off, or "default|reduce-overhead|max-autotune-no-cudagraphs"
 
-fitness_weight: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.9, 0.1] # (list[float]) fitness weights for [P, R, mAP@0.5, mAP@0.5:0.95] for detection/OBB/classify tasks, or [box_P, box_R, box_mAP@0.5, box_mAP@0.5:0.95, pose_P, pose_R, pose_mAP@0.5, pose_mAP@0.5:0.95] for pose/segment tasks (8 values). Can be overridden for custom optimization targets.
+fitness_weight: [0.0, 0.9, 0.0, 0.1, 0.0, 0.2, 0.0, 0.8] # (list[float]) fitness weights for [P, R, mAP@0.5, mAP@0.5:0.95] for detection/OBB/classify tasks, or [box_P, box_R, box_mAP@0.5, box_mAP@0.5:0.95, pose_P, pose_R, pose_mAP@0.5, pose_mAP@0.5:0.95] for pose/segment tasks (8 values). Can be overridden for custom optimization targets.
 channels: 3 # (int) number of input image channels (1 for grayscale, 3 for RGB, N for multispectral)
 # Segmentation
 overlap_mask: True # (bool) merge instance masks into one mask during training (segment only)
@@ -103,8 +103,8 @@ warmup_bias_lr: 0.1 # (float) bias learning rate during warmup
 box: 7.5 # (float) box loss gain
 cls: 0.5 # (float) classification loss gain
 dfl: 1.5 # (float) distribution focal loss gain
-pose: 12.0 # (float) pose loss gain (pose tasks)
-kobj: 1.0 # (float) keypoint objectness loss gain (pose tasks)
+pose: 20.0 # (float) pose loss gain (pose tasks)
+kobj: 4.0 # (float) keypoint objectness loss gain (pose tasks)
 nbs: 64 # (int) nominal batch size used for loss normalization
 hsv_h: 0.015 # (float) HSV hue augmentation fraction
 hsv_s: 0.7 # (float) HSV saturation augmentation fraction
