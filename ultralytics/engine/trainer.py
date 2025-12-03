@@ -642,7 +642,7 @@ class BaseTrainer:
         # Build detailed log message
         log_parts = []
         log_parts.append(f"\n{'='*80}")
-        log_parts.append(f"🏆 New Best Model Saved at Epoch {self.epoch + 1}")
+        log_parts.append(f"--- New Best Model Saved at Epoch {self.epoch + 1}")
         log_parts.append(f"{'='*80}")
         log_parts.append(f"Best fitness: {self.fitness:.4f} (previous best: {self.best_fitness:.4f})")
         log_parts.append(f"\nFitness weights: {fitness_weight}")
@@ -650,7 +650,7 @@ class BaseTrainer:
         # Log metrics based on task type
         if task == 'pose' and len(fitness_weight) == 8:
             # Pose task with 8 weights
-            log_parts.append(f"\n📊 Box Detection Metrics (weights: {fitness_weight[:4]}):")
+            log_parts.append(f"\n--- Box Detection Metrics (weights: {fitness_weight[:4]}):")
             box_metrics = []
             metric_names_box = ['metrics/precision(B)', 'metrics/recall(B)', 'metrics/mAP50(B)', 'metrics/mAP50-95(B)']
             for i, name in enumerate(metric_names_box):
@@ -663,7 +663,7 @@ class BaseTrainer:
             box_fitness = sum(v * w for v, w in zip(box_vals, fitness_weight[:4]))
             log_parts.append(f"  Box fitness contribution: {box_fitness:.4f}")
 
-            log_parts.append(f"\n🎯 Pose Keypoint Metrics (weights: {fitness_weight[4:]}):")
+            log_parts.append(f"\n--- Pose Keypoint Metrics (weights: {fitness_weight[4:]}):")
             pose_metrics = []
             metric_names_pose = ['metrics/precision(P)', 'metrics/recall(P)', 'metrics/mAP50(P)', 'metrics/mAP50-95(P)']
             for i, name in enumerate(metric_names_pose):
@@ -676,12 +676,12 @@ class BaseTrainer:
             pose_fitness = sum(v * w for v, w in zip(pose_vals, fitness_weight[4:]))
             log_parts.append(f"  Pose fitness contribution: {pose_fitness:.4f}")
 
-            log_parts.append("\n📈 Total Fitness Calculation:")
+            log_parts.append("\n--- Total Fitness Calculation:")
             log_parts.append(f"  {box_fitness:.4f} (box) + {pose_fitness:.4f} (pose) = {self.fitness:.4f}")
 
         elif task == 'segment' and len(fitness_weight) == 8:
             # Segment task with 8 weights
-            log_parts.append(f"\n📊 Box Detection Metrics (weights: {fitness_weight[:4]}):")
+            log_parts.append(f"\n--- Box Detection Metrics (weights: {fitness_weight[:4]}):")
             box_metrics = []
             metric_names_box = ['metrics/precision(B)', 'metrics/recall(B)', 'metrics/mAP50(B)', 'metrics/mAP50-95(B)']
             for i, name in enumerate(metric_names_box):
@@ -694,7 +694,7 @@ class BaseTrainer:
             box_fitness = sum(v * w for v, w in zip(box_vals, fitness_weight[:4]))
             log_parts.append(f"  Box fitness contribution: {box_fitness:.4f}")
 
-            log_parts.append(f"\n🎭 Mask Segmentation Metrics (weights: {fitness_weight[4:]}):")
+            log_parts.append(f"\n--- Mask Segmentation Metrics (weights: {fitness_weight[4:]}):")
             mask_metrics = []
             metric_names_mask = ['metrics/precision(M)', 'metrics/recall(M)', 'metrics/mAP50(M)', 'metrics/mAP50-95(M)']
             for i, name in enumerate(metric_names_mask):
@@ -707,12 +707,12 @@ class BaseTrainer:
             mask_fitness = sum(v * w for v, w in zip(mask_vals, fitness_weight[4:]))
             log_parts.append(f"  Mask fitness contribution: {mask_fitness:.4f}")
 
-            log_parts.append("\n📈 Total Fitness Calculation:")
+            log_parts.append("\n--- Total Fitness Calculation:")
             log_parts.append(f"  {box_fitness:.4f} (box) + {mask_fitness:.4f} (mask) = {self.fitness:.4f}")
 
         else:
             # Standard task (detect, pose with 4 weights, segment with 4 weights, obb, classify)
-            log_parts.append("\n📊 Metrics:")
+            log_parts.append("\n--- Metrics:")
             metric_names = ['metrics/precision(B)', 'metrics/recall(B)', 'metrics/mAP50(B)', 'metrics/mAP50-95(B)']
             metric_labels = ['Precision', 'Recall', 'mAP@0.5', 'mAP@0.5:0.95']
 
@@ -725,7 +725,7 @@ class BaseTrainer:
             log_parts.append("  " + " | ".join(metrics_display))
 
             # Show fitness calculation
-            log_parts.append("\n📈 Fitness Calculation:")
+            log_parts.append("\n--- Fitness Calculation:")
             calc_parts = []
             for i, (val, weight, label) in enumerate(zip(metric_vals, fitness_weight[:4], metric_labels)):
                 if weight > 0:
@@ -734,116 +734,10 @@ class BaseTrainer:
 
         log_parts.append(f"{'='*80}\n")
 
-        # Log everything
-        LOGGER.info("\n".join(log_parts))
-
-    def _log_best_model_selection(self):
-        """Log detailed information about why this model was chosen as the best."""
-        # Get fitness weights from args if available
-        fitness_weight = getattr(self.args, 'fitness_weight', None)
-        if fitness_weight is None:
-            fitness_weight = [0.0, 0.9, 0.1, 0.0]  # default for SkillReal dataset
-
-        # Determine task type and metric names
-        task = getattr(self.args, 'task', 'detect')
-
-        # Build detailed log message
-        log_parts = []
-        log_parts.append(f"\n{'='*80}")
-        log_parts.append(f"🏆 New Best Model Saved at Epoch {self.epoch + 1}")
-        log_parts.append(f"{'='*80}")
-        log_parts.append(f"Best fitness: {self.fitness:.4f} (previous best: {self.best_fitness:.4f})")
-        log_parts.append(f"\nFitness weights: {fitness_weight}")
-
-        # Log metrics based on task type
-        if task == 'pose' and len(fitness_weight) == 8:
-            # Pose task with 8 weights
-            log_parts.append(f"\n📊 Box Detection Metrics (weights: {fitness_weight[:4]}):")
-            box_metrics = []
-            metric_names_box = ['metrics/precision(B)', 'metrics/recall(B)', 'metrics/mAP50(B)', 'metrics/mAP50-95(B)']
-            for i, name in enumerate(metric_names_box):
-                val = self.metrics.get(name, 0.0)
-                box_metrics.append(f"{name}: {val:.4f}")
-            log_parts.append("  " + " | ".join(box_metrics))
-
-            # Calculate box fitness contribution
-            box_vals = [self.metrics.get(name, 0.0) for name in metric_names_box]
-            box_fitness = sum(v * w for v, w in zip(box_vals, fitness_weight[:4]))
-            log_parts.append(f"  Box fitness contribution: {box_fitness:.4f}")
-
-            log_parts.append(f"\n🎯 Pose Keypoint Metrics (weights: {fitness_weight[4:]}):")
-            pose_metrics = []
-            metric_names_pose = ['metrics/precision(P)', 'metrics/recall(P)', 'metrics/mAP50(P)', 'metrics/mAP50-95(P)']
-            for i, name in enumerate(metric_names_pose):
-                val = self.metrics.get(name, 0.0)
-                pose_metrics.append(f"{name}: {val:.4f}")
-            log_parts.append("  " + " | ".join(pose_metrics))
-
-            # Calculate pose fitness contribution
-            pose_vals = [self.metrics.get(name, 0.0) for name in metric_names_pose]
-            pose_fitness = sum(v * w for v, w in zip(pose_vals, fitness_weight[4:]))
-            log_parts.append(f"  Pose fitness contribution: {pose_fitness:.4f}")
-
-            log_parts.append("\n📈 Total Fitness Calculation:")
-            log_parts.append(f"  {box_fitness:.4f} (box) + {pose_fitness:.4f} (pose) = {self.fitness:.4f}")
-
-        elif task == 'segment' and len(fitness_weight) == 8:
-            # Segment task with 8 weights
-            log_parts.append(f"\n📊 Box Detection Metrics (weights: {fitness_weight[:4]}):")
-            box_metrics = []
-            metric_names_box = ['metrics/precision(B)', 'metrics/recall(B)', 'metrics/mAP50(B)', 'metrics/mAP50-95(B)']
-            for i, name in enumerate(metric_names_box):
-                val = self.metrics.get(name, 0.0)
-                box_metrics.append(f"{name}: {val:.4f}")
-            log_parts.append("  " + " | ".join(box_metrics))
-
-            # Calculate box fitness contribution
-            box_vals = [self.metrics.get(name, 0.0) for name in metric_names_box]
-            box_fitness = sum(v * w for v, w in zip(box_vals, fitness_weight[:4]))
-            log_parts.append(f"  Box fitness contribution: {box_fitness:.4f}")
-
-            log_parts.append(f"\n🎭 Mask Segmentation Metrics (weights: {fitness_weight[4:]}):")
-            mask_metrics = []
-            metric_names_mask = ['metrics/precision(M)', 'metrics/recall(M)', 'metrics/mAP50(M)', 'metrics/mAP50-95(M)']
-            for i, name in enumerate(metric_names_mask):
-                val = self.metrics.get(name, 0.0)
-                mask_metrics.append(f"{name}: {val:.4f}")
-            log_parts.append("  " + " | ".join(mask_metrics))
-
-            # Calculate mask fitness contribution
-            mask_vals = [self.metrics.get(name, 0.0) for name in metric_names_mask]
-            mask_fitness = sum(v * w for v, w in zip(mask_vals, fitness_weight[4:]))
-            log_parts.append(f"  Mask fitness contribution: {mask_fitness:.4f}")
-
-            log_parts.append("\n📈 Total Fitness Calculation:")
-            log_parts.append(f"  {box_fitness:.4f} (box) + {mask_fitness:.4f} (mask) = {self.fitness:.4f}")
-
-        else:
-            # Standard task (detect, pose with 4 weights, segment with 4 weights, obb, classify)
-            log_parts.append("\n📊 Metrics:")
-            metric_names = ['metrics/precision(B)', 'metrics/recall(B)', 'metrics/mAP50(B)', 'metrics/mAP50-95(B)']
-            metric_labels = ['Precision', 'Recall', 'mAP@0.5', 'mAP@0.5:0.95']
-
-            metrics_display = []
-            metric_vals = []
-            for name, label in zip(metric_names, metric_labels):
-                val = self.metrics.get(name, 0.0)
-                metrics_display.append(f"{label}: {val:.4f}")
-                metric_vals.append(val)
-            log_parts.append("  " + " | ".join(metrics_display))
-
-            # Show fitness calculation
-            log_parts.append("\n📈 Fitness Calculation:")
-            calc_parts = []
-            for i, (val, weight, label) in enumerate(zip(metric_vals, fitness_weight[:4], metric_labels)):
-                if weight > 0:
-                    calc_parts.append(f"{label}({val:.4f}) × {weight}")
-            log_parts.append(f"  {' + '.join(calc_parts)} = {self.fitness:.4f}")
-
-        log_parts.append(f"{'='*80}\n")
-
-        # Log everything
-        LOGGER.info("\n".join(log_parts))
+        # Log everything - use both LOGGER and print for CloudWatch compatibility
+        log_message = "\n".join(log_parts)
+        LOGGER.info(log_message)
+        print(log_message, flush=True)  # Ensure it appears in stdout for CloudWatch
 
     def get_dataset(self):
         """Get train and validation datasets from data dictionary.
