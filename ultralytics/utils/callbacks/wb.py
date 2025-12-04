@@ -1,6 +1,6 @@
 # Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
-
-from ultralytics.utils import SETTINGS, TESTS_RUNNING
+import os
+from ultralytics.utils import LOGGER, SETTINGS, TESTS_RUNNING
 from ultralytics.utils.torch_utils import model_info_for_loggers
 
 try:
@@ -128,11 +128,29 @@ def _log_plots(plots, step):
 def on_pretrain_routine_start(trainer):
     """Initialize and start wandb project if module is present."""
     if not wb.run:
-        wb.init(
-            project=str(trainer.args.project).replace("/", "-") if trainer.args.project else "Ultralytics",
-            name=str(trainer.args.name).replace("/", "-"),
-            config=vars(trainer.args),
-        )
+        # Check for existing run ID from external WandbManager
+        run_id = os.getenv("WANDB_RUN_ID")
+        project = os.getenv("WANDB_PROJECT")
+
+        if run_id and project:
+            # Resume existing run created by external WandbManager
+            LOGGER.info(f"W&B: Resuming run from external WandbManager (project={project}, id={run_id})")
+            wb.init(
+                project=project,
+                id=run_id,
+                resume="allow",  # Resume if exists, create if not
+                config=vars(trainer.args),
+            )
+            LOGGER.info(f"W&B: Successfully resumed run at {wb.run.get_url()}")
+        else:
+            # Create new run (original behavior)
+            LOGGER.info(f"W&B: Initializing new run (project={trainer.args.project or 'Ultralytics'}, name={trainer.args.name})")
+            wb.init(
+                project=str(trainer.args.project).replace("/", "-") if trainer.args.project else "Ultralytics",
+                name=str(trainer.args.name).replace("/", "-"),
+                config=vars(trainer.args),
+            )
+            LOGGER.info(f"W&B: Successfully created new run at {wb.run.get_url()}")
 
 
 def on_fit_epoch_end(trainer):
