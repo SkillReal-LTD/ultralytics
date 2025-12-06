@@ -1,6 +1,6 @@
 # Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
 import os
-from ultralytics.utils import LOGGER, SETTINGS, TESTS_RUNNING
+from ultralytics.utils import LOGGER, SETTINGS, TESTS_RUNNING, RANK
 from ultralytics.utils.torch_utils import model_info_for_loggers
 
 try:
@@ -11,7 +11,17 @@ try:
     assert hasattr(wb, "__version__")  # verify package is not directory
     _processed_plots = {}
 
-except (ImportError, AssertionError):
+except (ImportError, AssertionError) as e:
+    if RANK in {-1, 0}:
+        if isinstance(e, ImportError):
+            LOGGER.info(f"W&B: Not installed or import failed. Install with 'pip install wandb' to enable W&B logging. (RANK={RANK})")
+        elif isinstance(e, AssertionError):
+            if TESTS_RUNNING:
+                LOGGER.info(f"W&B: Disabled during testing (RANK={RANK})")
+            elif SETTINGS.get("wandb") is not True:
+                LOGGER.info(f"W&B: Disabled in settings. Set 'wandb: True' in settings to enable. Current value: {SETTINGS.get('wandb', 'not set')} (RANK={RANK})")
+            else:
+                LOGGER.info(f"W&B: Integration check failed (RANK={RANK})")
     wb = None
 
 
