@@ -151,7 +151,8 @@ def on_pretrain_routine_start(trainer):
                 config=vars(trainer.args),
             )
             LOGGER.info(f"W&B: Successfully created new run at {wb.run.get_url()}")
-
+    else:
+        LOGGER.info("W&B: Run already initialized outside Ultralytics")
 
 def on_fit_epoch_end(trainer):
     """Log training metrics and model information at the end of an epoch."""
