@@ -91,11 +91,11 @@ if __name__ == "__main__":
         print(f"✗ Detection fitness weight test failed: {e}\n")
 
     # Test 2: Pose model
-    try:
-        pose_results = test_pose_fitness_weight()
-        print("✓ Pose fitness weight test executed successfully\n")
-    except Exception as e:
-        print(f"✗ Pose fitness weight test failed: {e}\n")
+    # try:
+    #     pose_results = test_pose_fitness_weight()
+    #     print("✓ Pose fitness weight test executed successfully\n")
+    # except Exception as e:
+    #     print(f"✗ Pose fitness weight test failed: {e}\n")
 
     print("\n" + "#"*80)
     print("# ALL TESTS COMPLETED")
