@@ -22,9 +22,21 @@ def on_train_start(trainer):
 
 def on_model_save(trainer):
     """
-    Callback function to move checkpoint files to sync checkpoint folder during training.
+    Callback function to sync ALL checkpoint files to sync folder during training.
 
-    This callback copies last and best checkpoints to the sync folder.
+    Syncs:
+    - last.pt: Latest checkpoint (always synced to root)
+    - best.pt: Best performing checkpoint (always synced to root)
+    - epoch{N}.pt: Periodic checkpoints (synced to 'epochs/' subfolder, skip if exists)
+
+    Folder structure:
+    SYNC_CHECKPOINT_FOLDER/
+    ├── last.pt
+    ├── best.pt
+    └── epochs/
+        ├── epoch5.pt
+        ├── epoch10.pt
+        └── ...
 
     Configuration via environment variables:
     - SYNC_CHECKPOINT_FOLDER: Destination folder for checkpoints
@@ -37,25 +49,44 @@ def on_model_save(trainer):
         LOGGER.warning("SkillReal: SYNC_CHECKPOINT_FOLDER not set, skipping checkpoint sync")
         return
 
-    # Ensure sync folder exists
+    # Ensure sync folder and epochs subfolder exist
     sync_folder_path = Path(sync_checkpoint_folder)
     sync_folder_path.mkdir(parents=True, exist_ok=True)
 
-    # Save the last checkpoint file
-    if trainer.last.exists():
-        LOGGER.info(f"SkillReal: Copying last checkpoint {trainer.last} to {sync_checkpoint_folder}")
-        try:
-            shutil.copy(trainer.last, sync_checkpoint_folder)
-        except Exception as e:
-            LOGGER.error(f"SkillReal: Failed to copy last checkpoint: {e}")
+    epochs_folder = sync_folder_path / "epochs"
+    epochs_folder.mkdir(parents=True, exist_ok=True)
 
-    # Save the best checkpoint file
-    if trainer.best.exists():
-        LOGGER.info(f"SkillReal: Copying best checkpoint {trainer.best} to {sync_checkpoint_folder}")
+    # Sync last.pt to root (always sync - it updates every epoch)
+    if trainer.last.exists():
+        LOGGER.info(f"SkillReal: Syncing last checkpoint to {sync_checkpoint_folder}")
         try:
-            shutil.copy(trainer.best, sync_checkpoint_folder)
+            shutil.copy(trainer.last, sync_folder_path)
         except Exception as e:
-            LOGGER.error(f"SkillReal: Failed to copy best checkpoint: {e}")
+            LOGGER.error(f"SkillReal: Failed to sync last checkpoint: {e}")
+
+    # Sync best.pt to root (always sync - it updates when new best is found)
+    if trainer.best.exists():
+        LOGGER.info(f"SkillReal: Syncing best checkpoint to {sync_checkpoint_folder}")
+        try:
+            shutil.copy(trainer.best, sync_folder_path)
+        except Exception as e:
+            LOGGER.error(f"SkillReal: Failed to sync best checkpoint: {e}")
+
+    # Sync epoch checkpoints to 'epochs/' subfolder (skip if already exists)
+    epoch_checkpoints = sorted(trainer.wdir.glob("epoch*.pt"))
+    for ckpt_path in epoch_checkpoints:
+        dest_path = epochs_folder / ckpt_path.name
+
+        # Skip if already synced
+        if dest_path.exists():
+            LOGGER.debug(f"SkillReal: Skipping {ckpt_path.name} (already synced)")
+            continue
+
+        LOGGER.info(f"SkillReal: Syncing {ckpt_path.name} to {epochs_folder}")
+        try:
+            shutil.copy(ckpt_path, epochs_folder)
+        except Exception as e:
+            LOGGER.error(f"SkillReal: Failed to sync {ckpt_path.name}: {e}")
 
 
 # Export callbacks dictionary
