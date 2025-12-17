@@ -10,6 +10,7 @@ try:
 
     assert hasattr(wb, "__version__")  # verify package is not directory
     _processed_plots = {}
+    _last_logged_epoch = -1  # track last logged epoch to avoid duplicate logs from final_eval
 
 except (ImportError, AssertionError) as e:
     if RANK in {-1, 0}:
@@ -131,7 +132,7 @@ def _log_plots(plots, step):
     for name, params in plots.copy().items():  # shallow copy to prevent plots dict changing during iteration
         timestamp = params["timestamp"]
         if _processed_plots.get(name) != timestamp:
-            wb.run.log({name.stem: wb.Image(str(name))}, step=step)
+            wb.run.log({name.stem: wb.Image(str(name))}, step=step, commit=False)
             _processed_plots[name] = timestamp
 
 
@@ -166,25 +167,34 @@ def on_pretrain_routine_start(trainer):
 
 def on_fit_epoch_end(trainer):
     """Log training metrics and model information at the end of an epoch."""
+    global _last_logged_epoch
+    # Prevent duplicate logging when final_eval() calls this callback again for the same epoch
+    if trainer.epoch == _last_logged_epoch:
+        return
+    _last_logged_epoch = trainer.epoch
+
     _log_plots(trainer.plots, step=trainer.epoch + 1)
     _log_plots(trainer.validator.plots, step=trainer.epoch + 1)
     if trainer.epoch == 0:
-        wb.run.log(model_info_for_loggers(trainer), step=trainer.epoch + 1)
+        wb.run.log(model_info_for_loggers(trainer), step=trainer.epoch + 1, commit=False)
     wb.run.log(trainer.metrics, step=trainer.epoch + 1, commit=True)  # commit forces sync
 
 
 def on_train_epoch_end(trainer):
     """Log metrics and save images at the end of each training epoch."""
-    wb.run.log(trainer.label_loss_items(trainer.tloss, prefix="train"), step=trainer.epoch + 1)
-    wb.run.log(trainer.lr, step=trainer.epoch + 1)
+    wb.run.log(trainer.label_loss_items(trainer.tloss, prefix="train"), step=trainer.epoch + 1, commit=False)
+    wb.run.log(trainer.lr, step=trainer.epoch + 1, commit=False)
     if trainer.epoch == 1:
         _log_plots(trainer.plots, step=trainer.epoch + 1)
 
 
 def on_train_end(trainer):
     """Save the best model as an artifact and log final plots at the end of training."""
-    _log_plots(trainer.validator.plots, step=trainer.epoch + 1)
-    _log_plots(trainer.plots, step=trainer.epoch + 1)
+    # Use epoch + 2 to avoid step conflict with on_fit_epoch_end which commits at epoch + 1
+    # After commit, wandb's internal step advances, so we need to log at a higher step
+    final_step = trainer.epoch + 2
+    _log_plots(trainer.validator.plots, step=final_step)
+    _log_plots(trainer.plots, step=final_step)
     art = wb.Artifact(type="model", name=f"run_{wb.run.id}_model")
     if trainer.best.exists():
         art.add_file(trainer.best)
