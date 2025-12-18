@@ -29,7 +29,7 @@ from ultralytics.data.loaders import (
     autocast_list,
 )
 from ultralytics.data.utils import IMG_FORMATS, VID_FORMATS
-from ultralytics.utils import RANK, colorstr
+from ultralytics.utils import LOGGER, RANK, colorstr
 from ultralytics.utils.checks import check_file
 from ultralytics.utils.torch_utils import TORCH_2_0
 
@@ -168,6 +168,7 @@ class ContiguousDistributedSampler(torch.utils.data.Sampler):
         # ensure all ranks have a sample if batch size >= total size; degenerates to round-robin sampler
         self.batch_size = 1 if batch_size >= self.total_size else batch_size
         self.num_batches = math.ceil(self.total_size / self.batch_size)
+        self._warned_zero_samples = False  # Track if we've already warned about 0 samples
 
     def _get_rank_indices(self) -> tuple[int, int]:
         """Calculate the start and end sample indices for this rank."""
@@ -186,11 +187,32 @@ class ContiguousDistributedSampler(torch.utils.data.Sampler):
         start_idx = start_batch * self.batch_size
         end_idx = min(end_batch * self.batch_size, self.total_size)
 
+        # CRITICAL FIX: Clamp indices to prevent negative sample counts
+        # When num_batches < num_replicas, higher ranks may get start_idx >= total_size
+        start_idx = min(start_idx, self.total_size)
+        end_idx = max(end_idx, start_idx)  # Ensure end >= start
+
+        # Warn if this rank gets no samples (indicates dataset too small for GPU count) - only warn once
+        if end_idx == start_idx and not self._warned_zero_samples:
+            self._warned_zero_samples = True
+            LOGGER.warning(
+                f"GPU rank {self.rank}/{self.num_replicas - 1} assigned 0 samples "
+                f"(dataset={self.total_size}, batch_size={self.batch_size}, "
+                f"batches={self.num_batches}, GPUs={self.num_replicas}). "
+                f"Dataset is too small for {self.num_replicas} GPUs with batch_size={self.batch_size}. "
+                f"Consider: (1) reducing number of GPUs, (2) reducing batch_size, or (3) adding more data."
+            )
+
         return start_idx, end_idx
 
     def __iter__(self) -> Iterator:
         """Generate indices for this rank's contiguous chunk of the dataset."""
         start_idx, end_idx = self._get_rank_indices()
+
+        # Safety check: if no samples, return empty iterator to prevent infinite loop
+        if start_idx >= end_idx:
+            return iter([])
+
         indices = list(range(start_idx, end_idx))
 
         if self.shuffle:
@@ -203,7 +225,7 @@ class ContiguousDistributedSampler(torch.utils.data.Sampler):
     def __len__(self) -> int:
         """Return the number of samples in this rank's chunk."""
         start_idx, end_idx = self._get_rank_indices()
-        return end_idx - start_idx
+        return max(0, end_idx - start_idx)  # Never return negative
 
     def set_epoch(self, epoch: int) -> None:
         """Set the epoch for this sampler to ensure different shuffling patterns across epochs.
