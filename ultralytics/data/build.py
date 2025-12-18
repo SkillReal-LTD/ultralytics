@@ -109,7 +109,15 @@ class _RepeatSampler:
     def __iter__(self) -> Iterator:
         """Iterate over the sampler indefinitely, yielding its contents."""
         while True:
-            yield from iter(self.sampler)
+            sampler_iter = iter(self.sampler)
+            # Check if sampler is empty by trying to get first item
+            try:
+                first_item = next(sampler_iter)
+                yield first_item
+                yield from sampler_iter
+            except StopIteration:
+                # Sampler is empty, break to avoid infinite loop
+                break
 
 
 class ContiguousDistributedSampler(torch.utils.data.Sampler):
