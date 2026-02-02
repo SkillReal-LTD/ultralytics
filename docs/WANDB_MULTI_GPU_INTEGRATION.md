@@ -87,7 +87,9 @@ Update your `WandbManager` to set environment variables and close the run before
 
 ```python
 import os
+
 import wandb
+
 
 class WandbManager:
     def __init__(self, cfg, job_name, experiment_group_name=None):
@@ -230,16 +232,16 @@ wandb_manager.prepare_for_training()
 
 # 3. Start Ultralytics training
 # DDP subprocess will automatically resume the W&B run
-model = YOLO('yolo11n.pt')
+model = YOLO("yolo11n.pt")
 results = model.train(
-    data='coco8.yaml',
+    data="coco8.yaml",
     epochs=100,
     device=[0, 1, 2, 3],  # Multi-GPU
 )
 
 # 4. After training, resume run to log final artifacts
 wandb_manager.resume_after_training()
-wandb_manager.log_s3_artifact('s3://bucket/model.pt', 'final_model')
+wandb_manager.log_s3_artifact("s3://bucket/model.pt", "final_model")
 
 # 5. Finish the run
 wandb_manager.finish()
@@ -250,20 +252,21 @@ wandb_manager.finish()
 ### Environment Variable Inheritance
 
 1. **Parent sets env vars** before spawning DDP:
-   ```python
-   os.environ["WANDB_RUN_ID"] = "abc123"
-   os.environ["WANDB_PROJECT"] = "my-project"
-   ```
+
+    ```python
+    os.environ["WANDB_RUN_ID"] = "abc123"
+    os.environ["WANDB_PROJECT"] = "my-project"
+    ```
 
 2. **DDP spawning** via `torch.distributed.run`:
-   - Child processes inherit all environment variables
-   - Each rank gets the same `WANDB_RUN_ID`
+    - Child processes inherit all environment variables
+    - Each rank gets the same `WANDB_RUN_ID`
 
 3. **Rank 0 subprocess** reads env vars:
-   ```python
-   run_id = os.getenv("WANDB_RUN_ID")  # "abc123"
-   wandb.init(id=run_id, resume="allow")
-   ```
+    ```python
+    run_id = os.getenv("WANDB_RUN_ID")  # "abc123"
+    wandb.init(id=run_id, resume="allow")
+    ```
 
 ### Run Lifecycle
 
@@ -306,6 +309,7 @@ t10: finish()            CLOSED (final)             Parent
 **Cause**: Run was not created or env var not set correctly.
 
 **Solution**:
+
 ```python
 # Ensure initialize() returns successfully
 run, url = wandb_manager.initialize()
@@ -317,6 +321,7 @@ assert run is not None, "W&B initialization failed"
 **Cause**: Parent didn't close run before DDP spawning.
 
 **Solution**: Always call `prepare_for_training()`:
+
 ```python
 wandb_manager.initialize()
 wandb_manager.prepare_for_training()  # ← Don't forget this!
@@ -328,6 +333,7 @@ model.train()
 **Cause**: Env vars not set or callback not updated.
 
 **Solution**:
+
 1. Verify callback was updated in `ultralytics/utils/callbacks/wb.py`
 2. Check env vars are set: `echo $WANDB_RUN_ID`
 3. Enable debug logging: `os.environ["WANDB_DEBUG"] = "true"`
@@ -337,6 +343,7 @@ model.train()
 **Cause**: Run was closed and not resumed in subprocess.
 
 **Solution**: Ensure callback uses `resume="allow"`:
+
 ```python
 wb.init(id=run_id, resume="allow")  # ← "allow" is important
 ```

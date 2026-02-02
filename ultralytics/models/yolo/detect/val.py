@@ -58,7 +58,7 @@ class DetectionValidator(BaseValidator):
         self.args.task = "detect"
         self.iouv = torch.linspace(0.5, 0.95, 10)  # IoU vector for mAP@0.5:0.95
         self.niou = self.iouv.numel()
-        self.metrics = DetMetrics(fitness_weight=getattr(self.args, 'fitness_weight', None))
+        self.metrics = DetMetrics(fitness_weight=getattr(self.args, "fitness_weight", None))
 
     def preprocess(self, batch: dict[str, Any]) -> dict[str, Any]:
         """Preprocess batch of images for YOLO validation.
@@ -99,8 +99,10 @@ class DetectionValidator(BaseValidator):
         # Update metrics with fitness_weight from config if needed
         # For DetectionValidator, update self.metrics.box.fitness_weight directly
         # For PoseValidator/SegmentValidator, the weights are already split in __init__, so skip this
-        if self.args.task == 'detect' and (not hasattr(self.metrics.box, 'fitness_weight') or self.metrics.box.fitness_weight == [0.0, 0.9, 0.1, 0.0]):
-            fitness_weight = getattr(self.args, 'fitness_weight', [0.0, 0.9, 0.1, 0.0]) # default for SkillReal dataset
+        if self.args.task == "detect" and (
+            not hasattr(self.metrics.box, "fitness_weight") or self.metrics.box.fitness_weight == [0.0, 0.9, 0.1, 0.0]
+        ):
+            fitness_weight = getattr(self.args, "fitness_weight", [0.0, 0.9, 0.1, 0.0])  # default for SkillReal dataset
             self.metrics.box.fitness_weight = fitness_weight
         self.confusion_matrix = ConfusionMatrix(names=model.names, save_matches=self.args.plots and self.args.visualize)
 

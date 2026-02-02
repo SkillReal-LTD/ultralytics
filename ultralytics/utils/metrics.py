@@ -14,10 +14,7 @@ import torch
 
 from ultralytics.utils import LOGGER, DataExportMixin, SimpleClass, TryExcept, checks, plt_settings
 
-OKS_SIGMA = (
-    np.array([0.1, 0.1, 0.1, 0.1, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2])
-    / 10.0
-)
+OKS_SIGMA = np.array([0.1, 0.1, 0.1, 0.1, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]) / 10.0
 RLE_WEIGHT = np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.2, 1.2, 1.5, 1.5, 1.0, 1.0, 1.2, 1.2, 1.5, 1.5])
 
 
@@ -1043,9 +1040,8 @@ class DetMetrics(SimpleClass, DataExportMixin):
         summary: Generate a summarized representation of per-class detection metrics as a list of dictionaries.
     """
 
-    def __init__(self, names: Dict[int, str] = {}, fitness_weight: list = None) -> None:
-        """
-        Initialize a DetMetrics instance with a save directory, plot flag, and class names.
+    def __init__(self, names: Dict[int, str] = {}, fitness_weight: list | None = None) -> None:
+        """Initialize a DetMetrics instance with a save directory, plot flag, and class names.
 
         Args:
             names (Dict[int, str], optional): Dictionary of class names.
@@ -1211,9 +1207,8 @@ class SegmentMetrics(DetMetrics):
         summary: Generate a summarized representation of per-class segmentation metrics as a list of dictionaries.
     """
 
-    def __init__(self, names: Dict[int, str] = {}, fitness_weight: list = None) -> None:
-        """
-        Initialize a SegmentMetrics instance with a save directory, plot flag, and class names.
+    def __init__(self, names: Dict[int, str] = {}, fitness_weight: list | None = None) -> None:
+        """Initialize a SegmentMetrics instance with a save directory, plot flag, and class names.
 
         Args:
             names (Dict[int, str], optional): Dictionary of class names.
@@ -1368,9 +1363,8 @@ class PoseMetrics(DetMetrics):
         summary: Generate a summarized representation of per-class pose metrics as a list of dictionaries.
     """
 
-    def __init__(self, names: Dict[int, str] = {}, fitness_weight: list = None) -> None:
-        """
-        Initialize the PoseMetrics class with directory path, class names, and plotting options.
+    def __init__(self, names: Dict[int, str] = {}, fitness_weight: list | None = None) -> None:
+        """Initialize the PoseMetrics class with directory path, class names, and plotting options.
 
         Args:
             names (Dict[int, str], optional): Dictionary of class names.
@@ -1600,9 +1594,8 @@ class OBBMetrics(DetMetrics):
         https://arxiv.org/pdf/2106.06072.pdf
     """
 
-    def __init__(self, names: Dict[int, str] = {}, fitness_weight: list = None) -> None:
-        """
-        Initialize an OBBMetrics instance with directory, plotting, and class names.
+    def __init__(self, names: Dict[int, str] = {}, fitness_weight: list | None = None) -> None:
+        """Initialize an OBBMetrics instance with directory, plotting, and class names.
 
         Args:
             names (Dict[int, str], optional): Dictionary of class names.

@@ -70,7 +70,7 @@ class PoseValidator(DetectionValidator):
         self.args.task = "pose"
 
         # Validate fitness_weight length for pose task
-        fitness_weight = getattr(self.args, 'fitness_weight', None)
+        fitness_weight = getattr(self.args, "fitness_weight", None)
         if fitness_weight is not None and len(fitness_weight) not in [4, 8]:
             LOGGER.warning(
                 f"fitness_weight must have 4 or 8 values for pose task, got {len(fitness_weight)}. "

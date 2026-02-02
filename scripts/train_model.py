@@ -3,13 +3,13 @@ from ultralytics import YOLO, settings
 settings.update({"wandb": True})
 
 # Load model
-model = YOLO('yolo11n.pt')
+model = YOLO("yolo11n.pt")
 
 results = model.train(
     project="ultralytics",
     name="test_artifacts",
-    task='detect',
-    data='/home/ubuntu/ultralytics/configs/test_skillreal.yaml',
+    task="detect",
+    data="/home/ubuntu/ultralytics/configs/test_skillreal.yaml",
     epochs=4,
     imgsz=640,
     batch=16,

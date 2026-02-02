@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Debug script to check YOLO checkpoint epoch numbering"""
-import torch
+"""Debug script to check YOLO checkpoint epoch numbering."""
+
 import sys
+
+import torch
 
 if len(sys.argv) < 2:
     print("Usage: python debug_checkpoint.py <checkpoint_path>")
@@ -25,7 +27,7 @@ else:
 
 # Check for other epoch-related fields
 for key in checkpoint.keys():
-    if 'epoch' in key.lower():
+    if "epoch" in key.lower():
         print(f"{key} = {checkpoint[key]}")
 
 # Check best fitness info if available

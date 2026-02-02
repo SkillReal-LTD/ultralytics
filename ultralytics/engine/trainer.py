@@ -641,27 +641,27 @@ class BaseTrainer:
     def _log_best_model_selection(self):
         """Log detailed information about why this model was chosen as the best."""
         # Get fitness weights from args if available
-        fitness_weight = getattr(self.args, 'fitness_weight', None)
+        fitness_weight = getattr(self.args, "fitness_weight", None)
         if fitness_weight is None:
             fitness_weight = [0.0, 0.0, 0.1, 0.9]  # default
 
         # Determine task type and metric names
-        task = getattr(self.args, 'task', 'detect')
+        task = getattr(self.args, "task", "detect")
 
         # Build detailed log message
         log_parts = []
-        log_parts.append(f"\n{'='*80}")
+        log_parts.append(f"\n{'=' * 80}")
         log_parts.append(f"--- New Best Model Saved at Epoch {self.epoch + 1}")
-        log_parts.append(f"{'='*80}")
+        log_parts.append(f"{'=' * 80}")
         log_parts.append(f"Best fitness: {self.fitness:.4f} (previous best: {self.best_fitness:.4f})")
         log_parts.append(f"\nFitness weights: {fitness_weight}")
 
         # Log metrics based on task type
-        if task == 'pose' and len(fitness_weight) == 8:
+        if task == "pose" and len(fitness_weight) == 8:
             # Pose task with 8 weights
             log_parts.append(f"\n--- Box Detection Metrics (weights: {fitness_weight[:4]}):")
             box_metrics = []
-            metric_names_box = ['metrics/precision(B)', 'metrics/recall(B)', 'metrics/mAP50(B)', 'metrics/mAP50-95(B)']
+            metric_names_box = ["metrics/precision(B)", "metrics/recall(B)", "metrics/mAP50(B)", "metrics/mAP50-95(B)"]
             for i, name in enumerate(metric_names_box):
                 val = self.metrics.get(name, 0.0)
                 box_metrics.append(f"{name}: {val:.4f}")
@@ -674,7 +674,7 @@ class BaseTrainer:
 
             log_parts.append(f"\n--- Pose Keypoint Metrics (weights: {fitness_weight[4:]}):")
             pose_metrics = []
-            metric_names_pose = ['metrics/precision(P)', 'metrics/recall(P)', 'metrics/mAP50(P)', 'metrics/mAP50-95(P)']
+            metric_names_pose = ["metrics/precision(P)", "metrics/recall(P)", "metrics/mAP50(P)", "metrics/mAP50-95(P)"]
             for i, name in enumerate(metric_names_pose):
                 val = self.metrics.get(name, 0.0)
                 pose_metrics.append(f"{name}: {val:.4f}")
@@ -688,11 +688,11 @@ class BaseTrainer:
             log_parts.append("\n--- Total Fitness Calculation:")
             log_parts.append(f"  {box_fitness:.4f} (box) + {pose_fitness:.4f} (pose) = {self.fitness:.4f}")
 
-        elif task == 'segment' and len(fitness_weight) == 8:
+        elif task == "segment" and len(fitness_weight) == 8:
             # Segment task with 8 weights
             log_parts.append(f"\n--- Box Detection Metrics (weights: {fitness_weight[:4]}):")
             box_metrics = []
-            metric_names_box = ['metrics/precision(B)', 'metrics/recall(B)', 'metrics/mAP50(B)', 'metrics/mAP50-95(B)']
+            metric_names_box = ["metrics/precision(B)", "metrics/recall(B)", "metrics/mAP50(B)", "metrics/mAP50-95(B)"]
             for i, name in enumerate(metric_names_box):
                 val = self.metrics.get(name, 0.0)
                 box_metrics.append(f"{name}: {val:.4f}")
@@ -705,7 +705,7 @@ class BaseTrainer:
 
             log_parts.append(f"\n--- Mask Segmentation Metrics (weights: {fitness_weight[4:]}):")
             mask_metrics = []
-            metric_names_mask = ['metrics/precision(M)', 'metrics/recall(M)', 'metrics/mAP50(M)', 'metrics/mAP50-95(M)']
+            metric_names_mask = ["metrics/precision(M)", "metrics/recall(M)", "metrics/mAP50(M)", "metrics/mAP50-95(M)"]
             for i, name in enumerate(metric_names_mask):
                 val = self.metrics.get(name, 0.0)
                 mask_metrics.append(f"{name}: {val:.4f}")
@@ -722,8 +722,8 @@ class BaseTrainer:
         else:
             # Standard task (detect, pose with 4 weights, segment with 4 weights, obb, classify)
             log_parts.append("\n--- Metrics:")
-            metric_names = ['metrics/precision(B)', 'metrics/recall(B)', 'metrics/mAP50(B)', 'metrics/mAP50-95(B)']
-            metric_labels = ['Precision', 'Recall', 'mAP@0.5', 'mAP@0.5:0.95']
+            metric_names = ["metrics/precision(B)", "metrics/recall(B)", "metrics/mAP50(B)", "metrics/mAP50-95(B)"]
+            metric_labels = ["Precision", "Recall", "mAP@0.5", "mAP@0.5:0.95"]
 
             metrics_display = []
             metric_vals = []
@@ -741,7 +741,7 @@ class BaseTrainer:
                     calc_parts.append(f"{label}({val:.4f}) × {weight}")
             log_parts.append(f"  {' + '.join(calc_parts)} = {self.fitness:.4f}")
 
-        log_parts.append(f"{'='*80}\n")
+        log_parts.append(f"{'=' * 80}\n")
 
         # Log everything - use both LOGGER and print for CloudWatch compatibility
         log_message = "\n".join(log_parts)
@@ -783,13 +783,13 @@ class BaseTrainer:
             LOGGER.info("Overriding class names with single class.")
             data["names"] = {0: "item"}
             data["nc"] = 1
-        
+
         # Override channels if specified in args
-        if hasattr(self.args, 'channels') and self.args.channels is not None:
-            if 'channels' in data and data['channels'] != self.args.channels:
+        if hasattr(self.args, "channels") and self.args.channels is not None:
+            if "channels" in data and data["channels"] != self.args.channels:
                 LOGGER.info(f"Overriding dataset channels from {data.get('channels', 3)} to {self.args.channels}")
-            data['channels'] = self.args.channels
-        
+            data["channels"] = self.args.channels
+
         return data
 
     def setup_model(self):
