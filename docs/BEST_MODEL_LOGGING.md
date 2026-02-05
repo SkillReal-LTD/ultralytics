@@ -100,7 +100,7 @@ Set custom fitness weights in your training configuration:
 
 ```yaml
 # config.yaml
-fitness_weight: [0.0, 0.9, 0.1, 0.0]  # Optimize for recall
+fitness_weight: [0.0, 0.9, 0.1, 0.0] # Optimize for recall
 ```
 
 #### Pose/Segment Tasks (8 weights)
@@ -123,29 +123,30 @@ fitness_weight: [0.0, 0.0, 0.08, 0.72, 0.0, 0.0, 0.02, 0.18]
 from ultralytics import YOLO
 
 # For pose task - optimize pose only
-model = YOLO('yolo11n-pose.pt')
-model.train(
-    data='coco8-pose.yaml',
-    epochs=100,
-    fitness_weight=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.9]
-)
+model = YOLO("yolo11n-pose.pt")
+model.train(data="coco8-pose.yaml", epochs=100, fitness_weight=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.9])
 ```
 
 ## Benefits
 
 ### 1. **Transparency**
+
 See exactly why each model was chosen as best, making it clear which metrics drove the selection.
 
 ### 2. **Debugging**
+
 Quickly identify if your fitness weights are working as intended.
 
 ### 3. **Optimization Verification**
+
 For pose/segment tasks with 8-weight fitness, verify that your model is being optimized for the right metrics (box vs pose/mask).
 
 ### 4. **Training Insights**
+
 Understand which metrics improve over time and which contribute most to fitness.
 
 ### 5. **Reproducibility**
+
 Logs include complete fitness weight configuration, making experiments reproducible.
 
 ## Example Training Logs
@@ -195,18 +196,21 @@ The logging is implemented in the `BaseTrainer` class:
 ### Metrics Available
 
 #### Detection/OBB
+
 - `metrics/precision(B)`
 - `metrics/recall(B)`
 - `metrics/mAP50(B)`
 - `metrics/mAP50-95(B)`
 
 #### Pose (additional)
+
 - `metrics/precision(P)` - Pose keypoint precision
 - `metrics/recall(P)` - Pose keypoint recall
 - `metrics/mAP50(P)` - Pose mAP@0.5
 - `metrics/mAP50-95(P)` - Pose mAP@0.5:0.95
 
 #### Segmentation (additional)
+
 - `metrics/precision(M)` - Mask precision
 - `metrics/recall(M)` - Mask recall
 - `metrics/mAP50(M)` - Mask mAP@0.5

@@ -21,16 +21,14 @@ def on_train_start(trainer):
 
 
 def on_model_save(trainer):
-    """
-    Callback function to sync ALL checkpoint files to sync folder during training.
+    """Callback function to sync ALL checkpoint files to sync folder during training.
 
     Syncs:
     - last.pt: Latest checkpoint (always synced to root)
     - best.pt: Best performing checkpoint (always synced to root)
     - epoch{N}.pt: Periodic checkpoints (synced to 'epochs/' subfolder, skip if exists)
 
-    Folder structure:
-    SYNC_CHECKPOINT_FOLDER/
+    Folder structure: SYNC_CHECKPOINT_FOLDER/
     ├── last.pt
     ├── best.pt
     └── epochs/

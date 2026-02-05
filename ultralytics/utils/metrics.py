@@ -14,10 +14,8 @@ import torch
 
 from ultralytics.utils import LOGGER, DataExportMixin, SimpleClass, TryExcept, checks, plt_settings
 
-OKS_SIGMA = (
-    np.array([0.1, 0.1, 0.1, 0.1, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2])
-    / 10.0
-) # default for SkillReal dataset
+OKS_SIGMA = np.array([0.1, 0.1, 0.1, 0.1, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]) / 10.0
+RLE_WEIGHT = np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.2, 1.2, 1.5, 1.5, 1.0, 1.0, 1.2, 1.2, 1.5, 1.5])
 
 
 def bbox_ioa(box1: np.ndarray, box2: np.ndarray, iou: bool = False, eps: float = 1e-7) -> np.ndarray:
@@ -191,7 +189,8 @@ def _get_covariance_matrix(boxes: torch.Tensor) -> tuple[torch.Tensor, torch.Ten
         boxes (torch.Tensor): A tensor of shape (N, 5) representing rotated bounding boxes, with xywhr format.
 
     Returns:
-        (torch.Tensor): Covariance matrices corresponding to original rotated bounding boxes.
+        (tuple[torch.Tensor, torch.Tensor, torch.Tensor]): Covariance matrix components (a, b, c) where the covariance
+            matrix is [[a, c], [c, b]], each of shape (N, 1).
     """
     # Gaussian bounding boxes, ignore the center points (the first two columns) because they are not needed here.
     gbbs = torch.cat((boxes[:, 2:4].pow(2) / 12, boxes[:, 4:]), dim=-1)
@@ -306,12 +305,12 @@ class ConfusionMatrix(DataExportMixin):
     Attributes:
         task (str): The type of task, either 'detect' or 'classify'.
         matrix (np.ndarray): The confusion matrix, with dimensions depending on the task.
-        nc (int): The number of category.
+        nc (int): The number of classes.
         names (list[str]): The names of the classes, used as labels on the plot.
         matches (dict): Contains the indices of ground truths and predictions categorized into TP, FP and FN.
     """
 
-    def __init__(self, names: dict[int, str] = [], task: str = "detect", save_matches: bool = False):
+    def __init__(self, names: dict[int, str] = {}, task: str = "detect", save_matches: bool = False):
         """Initialize a ConfusionMatrix instance.
 
         Args:
@@ -564,7 +563,7 @@ class ConfusionMatrix(DataExportMixin):
         fig.savefig(plot_fname, dpi=250)
         plt.close(fig)
         if on_plot:
-            on_plot(plot_fname)
+            on_plot(plot_fname, {"type": "confusion_matrix", "matrix": self.matrix.tolist()})
 
     def print(self):
         """Print the confusion matrix to the console."""
@@ -657,7 +656,9 @@ def plot_pr_curve(
     fig.savefig(save_dir, dpi=250)
     plt.close(fig)
     if on_plot:
-        on_plot(save_dir)
+        # Pass PR curve data for interactive plotting (class names stored at model level)
+        # Transpose py to match other curves: y[class][point] format
+        on_plot(save_dir, {"type": "pr_curve", "x": px.tolist(), "y": py.T.tolist(), "ap": ap.tolist()})
 
 
 @plt_settings()
@@ -702,7 +703,8 @@ def plot_mc_curve(
     fig.savefig(save_dir, dpi=250)
     plt.close(fig)
     if on_plot:
-        on_plot(save_dir)
+        # Pass metric-confidence curve data for interactive plotting (class names stored at model level)
+        on_plot(save_dir, {"type": f"{ylabel.lower()}_curve", "x": px.tolist(), "y": py.tolist()})
 
 
 def compute_ap(recall: list[float], precision: list[float]) -> tuple[float, np.ndarray, np.ndarray]:
@@ -1038,9 +1040,8 @@ class DetMetrics(SimpleClass, DataExportMixin):
         summary: Generate a summarized representation of per-class detection metrics as a list of dictionaries.
     """
 
-    def __init__(self, names: Dict[int, str] = {}, fitness_weight: list = None) -> None:
-        """
-        Initialize a DetMetrics instance with a save directory, plot flag, and class names.
+    def __init__(self, names: Dict[int, str] = {}, fitness_weight: list | None = None) -> None:
+        """Initialize a DetMetrics instance with a save directory, plot flag, and class names.
 
         Args:
             names (Dict[int, str], optional): Dictionary of class names.
@@ -1206,9 +1207,8 @@ class SegmentMetrics(DetMetrics):
         summary: Generate a summarized representation of per-class segmentation metrics as a list of dictionaries.
     """
 
-    def __init__(self, names: Dict[int, str] = {}, fitness_weight: list = None) -> None:
-        """
-        Initialize a SegmentMetrics instance with a save directory, plot flag, and class names.
+    def __init__(self, names: Dict[int, str] = {}, fitness_weight: list | None = None) -> None:
+        """Initialize a SegmentMetrics instance with a save directory, plot flag, and class names.
 
         Args:
             names (Dict[int, str], optional): Dictionary of class names.
@@ -1363,9 +1363,8 @@ class PoseMetrics(DetMetrics):
         summary: Generate a summarized representation of per-class pose metrics as a list of dictionaries.
     """
 
-    def __init__(self, names: Dict[int, str] = {}, fitness_weight: list = None) -> None:
-        """
-        Initialize the PoseMetrics class with directory path, class names, and plotting options.
+    def __init__(self, names: Dict[int, str] = {}, fitness_weight: list | None = None) -> None:
+        """Initialize the PoseMetrics class with directory path, class names, and plotting options.
 
         Args:
             names (Dict[int, str], optional): Dictionary of class names.
@@ -1595,9 +1594,8 @@ class OBBMetrics(DetMetrics):
         https://arxiv.org/pdf/2106.06072.pdf
     """
 
-    def __init__(self, names: Dict[int, str] = {}, fitness_weight: list = None) -> None:
-        """
-        Initialize an OBBMetrics instance with directory, plotting, and class names.
+    def __init__(self, names: Dict[int, str] = {}, fitness_weight: list | None = None) -> None:
+        """Initialize an OBBMetrics instance with directory, plotting, and class names.
 
         Args:
             names (Dict[int, str], optional): Dictionary of class names.

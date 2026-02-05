@@ -42,7 +42,7 @@ class PoseValidator(DetectionValidator):
 
     Examples:
         >>> from ultralytics.models.yolo.pose import PoseValidator
-        >>> args = dict(model="yolo11n-pose.pt", data="coco8-pose.yaml")
+        >>> args = dict(model="yolo26n-pose.pt", data="coco8-pose.yaml")
         >>> validator = PoseValidator(args=args)
         >>> validator()
 
@@ -59,7 +59,7 @@ class PoseValidator(DetectionValidator):
         specialized metrics for pose evaluation.
 
         Args:
-            dataloader (torch.utils.data.DataLoader, optional): Dataloader to be used for validation.
+            dataloader (torch.utils.data.DataLoader, optional): DataLoader to be used for validation.
             save_dir (Path | str, optional): Directory to save results.
             args (dict, optional): Arguments for the validator including task set to "pose".
             _callbacks (list, optional): List of callback functions to be executed during validation.
@@ -70,7 +70,7 @@ class PoseValidator(DetectionValidator):
         self.args.task = "pose"
 
         # Validate fitness_weight length for pose task
-        fitness_weight = getattr(self.args, 'fitness_weight', None)
+        fitness_weight = getattr(self.args, "fitness_weight", None)
         if fitness_weight is not None and len(fitness_weight) not in [4, 8]:
             LOGGER.warning(
                 f"fitness_weight must have 4 or 8 values for pose task, got {len(fitness_weight)}. "

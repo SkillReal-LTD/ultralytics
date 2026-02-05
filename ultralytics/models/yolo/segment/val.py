@@ -30,7 +30,7 @@ class SegmentationValidator(DetectionValidator):
 
     Examples:
         >>> from ultralytics.models.yolo.segment import SegmentationValidator
-        >>> args = dict(model="yolo11n-seg.pt", data="coco8-seg.yaml")
+        >>> args = dict(model="yolo26n-seg.pt", data="coco8-seg.yaml")
         >>> validator = SegmentationValidator(args=args)
         >>> validator()
     """
@@ -39,7 +39,7 @@ class SegmentationValidator(DetectionValidator):
         """Initialize SegmentationValidator and set task to 'segment', metrics to SegmentMetrics.
 
         Args:
-            dataloader (torch.utils.data.DataLoader, optional): Dataloader to use for validation.
+            dataloader (torch.utils.data.DataLoader, optional): DataLoader to use for validation.
             save_dir (Path, optional): Directory to save results.
             args (namespace, optional): Arguments for the validator.
             _callbacks (list, optional): List of callback functions.
@@ -49,7 +49,7 @@ class SegmentationValidator(DetectionValidator):
         self.args.task = "segment"
 
         # Validate fitness_weight length for segment task
-        fitness_weight = getattr(self.args, 'fitness_weight', None)
+        fitness_weight = getattr(self.args, "fitness_weight", None)
         if fitness_weight is not None and len(fitness_weight) not in [4, 8]:
             LOGGER.warning(
                 f"fitness_weight must have 4 or 8 values for segment task, got {len(fitness_weight)}. "
@@ -110,7 +110,7 @@ class SegmentationValidator(DetectionValidator):
         Returns:
             list[dict[str, torch.Tensor]]: Processed detection predictions with masks.
         """
-        proto = preds[1][-1] if len(preds[1]) == 3 else preds[1]  # second output is len 3 if pt, but only 1 if exported
+        proto = preds[0][1] if isinstance(preds[0], tuple) else preds[1]
         preds = super().postprocess(preds[0])
         imgsz = [4 * x for x in proto.shape[2:]]  # get image size from proto
         for i, pred in enumerate(preds):

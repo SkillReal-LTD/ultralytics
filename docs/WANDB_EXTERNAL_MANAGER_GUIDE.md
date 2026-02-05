@@ -7,6 +7,7 @@ This guide shows how to integrate your external `WandbManager` with Ultralytics 
 ## What Changed in Ultralytics
 
 Ultralytics W&B callback now supports resuming runs created externally via environment variables:
+
 - `WANDB_RUN_ID` - The W&B run ID to resume
 - `WANDB_PROJECT` - The W&B project name
 
@@ -102,6 +103,7 @@ def resume_after_training(self):
 Change your training flow to close the run before Ultralytics training:
 
 **BEFORE:**
+
 ```python
 # Old way - doesn't work in multi-GPU
 wandb_manager = WandbManager(cfg, job_name, experiment_group_name)
@@ -116,6 +118,7 @@ wandb_manager.finish()
 ```
 
 **AFTER:**
+
 ```python
 # New way - works in multi-GPU ✅
 wandb_manager = WandbManager(cfg, job_name, experiment_group_name)
@@ -139,16 +142,10 @@ wandb_manager.finish()
 ## Complete Example
 
 ```python
-import os
-import wandb
 from ultralytics import YOLO
 
 # 1. Initialize WandbManager and upload pre-training artifacts
-wandb_manager = WandbManager(
-    cfg=cfg,
-    job_name="yolo-training-run-001",
-    experiment_group_name="experiment-v1"
-)
+wandb_manager = WandbManager(cfg=cfg, job_name="yolo-training-run-001", experiment_group_name="experiment-v1")
 
 # Creates run, sets WANDB_RUN_ID and WANDB_PROJECT env vars
 run, url = wandb_manager.initialize()
@@ -157,18 +154,20 @@ print(f"W&B Run: {url}")
 # Upload configs before training
 wandb_manager.save_config(raw_cfg)
 wandb_manager.save_training_artifacts()
-wandb_manager.save_training_job_metadata({
-    "git_commit": "abc123",
-    "model_version": "v1.0.0",
-})
+wandb_manager.save_training_job_metadata(
+    {
+        "git_commit": "abc123",
+        "model_version": "v1.0.0",
+    }
+)
 
 # 2. CRITICAL: Close run before Ultralytics training
 wandb_manager.prepare_for_training()
 
 # 3. Run Ultralytics training (works with single or multi-GPU)
-model = YOLO('yolo11n.pt')
+model = YOLO("yolo11n.pt")
 results = model.train(
-    data='coco8.yaml',
+    data="coco8.yaml",
     epochs=100,
     imgsz=640,
     device=[0, 1, 2, 3],  # Multi-GPU
@@ -179,9 +178,7 @@ wandb_manager.resume_after_training()
 
 # Log final artifacts
 wandb_manager.log_s3_artifact(
-    s3_path='s3://my-bucket/models/final.pt',
-    artifact_name='final_model',
-    artifact_type='model'
+    s3_path="s3://my-bucket/models/final.pt", artifact_name="final_model", artifact_type="model"
 )
 
 # 5. Clean up
@@ -192,6 +189,7 @@ print("Training complete!")
 ## How It Works
 
 ### Single Process Flow
+
 ```
 1. initialize()          → Create W&B run (id=abc123)
 2. save_config()         → Upload artifacts to run abc123
@@ -205,6 +203,7 @@ print("Training complete!")
 ```
 
 ### Multi-GPU Flow
+
 ```
 Parent Process              Rank 0 Subprocess           Rank 1-N Subprocesses
 ──────────────              ──────────────────          ─────────────────────
@@ -242,38 +241,40 @@ Parent Process              Rank 0 Subprocess           Rank 1-N Subprocesses
 ### ✅ Must Do
 
 1. **Set both env vars** in `initialize()`:
-   - `os.environ["WANDB_RUN_ID"]`
-   - `os.environ["WANDB_PROJECT"]`
+    - `os.environ["WANDB_RUN_ID"]`
+    - `os.environ["WANDB_PROJECT"]`
 
 2. **Call `prepare_for_training()`** before `model.train()`
-   - This closes the run so DDP can resume it
-   - Forgetting this causes "run already running" errors
+    - This closes the run so DDP can resume it
+    - Forgetting this causes "run already running" errors
 
 3. **Call `resume_after_training()`** after `model.train()`
-   - Only if you need to log more artifacts
-   - Skip this if you're done after training
+    - Only if you need to log more artifacts
+    - Skip this if you're done after training
 
 ### ❌ Common Mistakes
 
 1. **Don't forget to close run** before training:
-   ```python
-   wandb_manager.initialize()
-   model.train()  # ❌ Run still open, causes conflicts
-   ```
+
+    ```python
+    wandb_manager.initialize()
+    model.train()  # ❌ Run still open, causes conflicts
+    ```
 
 2. **Don't log artifacts without resuming**:
-   ```python
-   model.train()
-   wandb_manager.log_s3_artifact(...)  # ❌ No active run
-   ```
+
+    ```python
+    model.train()
+    wandb_manager.log_s3_artifact(...)  # ❌ No active run
+    ```
 
 3. **Don't call `finish()` in both places**:
-   ```python
-   wandb_manager.prepare_for_training()  # Calls finish()
-   # ... training ...
-   wandb_manager.finish()  # ❌ Already finished by Ultralytics
-   wandb_manager.resume_after_training()  # Must resume first!
-   ```
+    ```python
+    wandb_manager.prepare_for_training()  # Calls finish()
+    # ... training ...
+    wandb_manager.finish()  # ❌ Already finished by Ultralytics
+    wandb_manager.resume_after_training()  # Must resume first!
+    ```
 
 ## Minimal Code Changes
 
@@ -296,27 +297,31 @@ Check that it's working:
 
 1. **Single W&B run created** - Not multiple runs
 2. **Run shows both phases**:
-   - Pre-training: Your configs/artifacts
-   - Training: Ultralytics metrics/plots
-   - Post-training: Your final artifacts (if using resume)
+    - Pre-training: Your configs/artifacts
+    - Training: Ultralytics metrics/plots
+    - Post-training: Your final artifacts (if using resume)
 3. **No "run already running" errors**
 4. **Multi-GPU works** - Same run ID across all ranks
 
 ## Troubleshooting
 
 ### "Run abc123 not found"
+
 - **Cause**: Env vars not set or wrong run ID
 - **Fix**: Verify `os.environ["WANDB_RUN_ID"] = self.run.id` in `initialize()`
 
 ### "wandb: ERROR Run abc123 is already running"
+
 - **Cause**: Didn't call `prepare_for_training()` before `model.train()`
 - **Fix**: Add `wandb_manager.prepare_for_training()` before training
 
 ### Multiple W&B runs created
+
 - **Cause**: Env vars not being read by Ultralytics
 - **Fix**: Check Ultralytics version has the updated callback
 
 ### "No active run" when logging artifacts
+
 - **Cause**: Forgot to call `resume_after_training()`
 - **Fix**: Call `wandb_manager.resume_after_training()` after training
 

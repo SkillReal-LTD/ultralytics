@@ -1,6 +1,7 @@
 # Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
 import os
-from ultralytics.utils import LOGGER, SETTINGS, TESTS_RUNNING, RANK
+
+from ultralytics.utils import LOGGER, RANK, SETTINGS, TESTS_RUNNING
 from ultralytics.utils.torch_utils import model_info_for_loggers
 
 try:
@@ -15,12 +16,16 @@ try:
 except (ImportError, AssertionError) as e:
     if RANK in {-1, 0}:
         if isinstance(e, ImportError):
-            LOGGER.info(f"W&B: Not installed or import failed. Install with 'pip install wandb' to enable W&B logging. (RANK={RANK})")
+            LOGGER.info(
+                f"W&B: Not installed or import failed. Install with 'pip install wandb' to enable W&B logging. (RANK={RANK})"
+            )
         elif isinstance(e, AssertionError):
             if TESTS_RUNNING:
                 LOGGER.info(f"W&B: Disabled during testing (RANK={RANK})")
             elif SETTINGS.get("wandb") is not True:
-                LOGGER.info(f"W&B: Disabled in settings. Set 'wandb: True' in settings to enable. Current value: {SETTINGS.get('wandb', 'not set')} (RANK={RANK})")
+                LOGGER.info(
+                    f"W&B: Disabled in settings. Set 'wandb: True' in settings to enable. Current value: {SETTINGS.get('wandb', 'not set')} (RANK={RANK})"
+                )
             else:
                 LOGGER.info(f"W&B: Integration check failed (RANK={RANK})")
     wb = None
@@ -155,7 +160,9 @@ def on_pretrain_routine_start(trainer):
             LOGGER.info(f"W&B: Successfully resumed run at {wb.run.get_url()}")
         else:
             # Create new run (original behavior)
-            LOGGER.info(f"W&B: Initializing new run (project={trainer.args.project or 'Ultralytics'}, name={trainer.args.name})")
+            LOGGER.info(
+                f"W&B: Initializing new run (project={trainer.args.project or 'Ultralytics'}, name={trainer.args.name})"
+            )
             wb.init(
                 project=str(trainer.args.project).replace("/", "-") if trainer.args.project else "Ultralytics",
                 name=str(trainer.args.name).replace("/", "-"),
@@ -164,6 +171,7 @@ def on_pretrain_routine_start(trainer):
             LOGGER.info(f"W&B: Successfully created new run at {wb.run.get_url()}")
     else:
         LOGGER.info("W&B: Run already initialized outside Ultralytics")
+
 
 def on_fit_epoch_end(trainer):
     """Log training metrics and model information at the end of an epoch."""

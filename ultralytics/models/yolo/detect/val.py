@@ -37,7 +37,7 @@ class DetectionValidator(BaseValidator):
 
     Examples:
         >>> from ultralytics.models.yolo.detect import DetectionValidator
-        >>> args = dict(model="yolo11n.pt", data="coco8.yaml")
+        >>> args = dict(model="yolo26n.pt", data="coco8.yaml")
         >>> validator = DetectionValidator(args=args)
         >>> validator()
     """
@@ -46,7 +46,7 @@ class DetectionValidator(BaseValidator):
         """Initialize detection validator with necessary variables and settings.
 
         Args:
-            dataloader (torch.utils.data.DataLoader, optional): Dataloader to use for validation.
+            dataloader (torch.utils.data.DataLoader, optional): DataLoader to use for validation.
             save_dir (Path, optional): Directory to save results.
             args (dict[str, Any], optional): Arguments for the validator.
             _callbacks (list[Any], optional): List of callback functions.
@@ -58,7 +58,7 @@ class DetectionValidator(BaseValidator):
         self.args.task = "detect"
         self.iouv = torch.linspace(0.5, 0.95, 10)  # IoU vector for mAP@0.5:0.95
         self.niou = self.iouv.numel()
-        self.metrics = DetMetrics(fitness_weight=getattr(self.args, 'fitness_weight', None))
+        self.metrics = DetMetrics(fitness_weight=getattr(self.args, "fitness_weight", None))
 
     def preprocess(self, batch: dict[str, Any]) -> dict[str, Any]:
         """Preprocess batch of images for YOLO validation.
@@ -99,8 +99,10 @@ class DetectionValidator(BaseValidator):
         # Update metrics with fitness_weight from config if needed
         # For DetectionValidator, update self.metrics.box.fitness_weight directly
         # For PoseValidator/SegmentValidator, the weights are already split in __init__, so skip this
-        if self.args.task == 'detect' and (not hasattr(self.metrics.box, 'fitness_weight') or self.metrics.box.fitness_weight == [0.0, 0.9, 0.1, 0.0]):
-            fitness_weight = getattr(self.args, 'fitness_weight', [0.0, 0.9, 0.1, 0.0]) # default for SkillReal dataset
+        if self.args.task == "detect" and (
+            not hasattr(self.metrics.box, "fitness_weight") or self.metrics.box.fitness_weight == [0.0, 0.9, 0.1, 0.0]
+        ):
+            fitness_weight = getattr(self.args, "fitness_weight", [0.0, 0.9, 0.1, 0.0])  # default for SkillReal dataset
             self.metrics.box.fitness_weight = fitness_weight
         self.confusion_matrix = ConfusionMatrix(names=model.names, save_matches=self.args.plots and self.args.visualize)
 
@@ -262,7 +264,7 @@ class DetectionValidator(BaseValidator):
         pf = "%22s" + "%11i" * 2 + "%11.3g" * len(self.metrics.keys)  # print format
         LOGGER.info(pf % ("all", self.seen, self.metrics.nt_per_class.sum(), *self.metrics.mean_results()))
         if self.metrics.nt_per_class.sum() == 0:
-            LOGGER.warning(f"no labels found in {self.args.task} set, can not compute metrics without labels")
+            LOGGER.warning(f"no labels found in {self.args.task} set, cannot compute metrics without labels")
 
         # Print results per class
         if self.args.verbose and not self.training and self.nc > 1 and len(self.metrics.stats):
@@ -314,7 +316,7 @@ class DetectionValidator(BaseValidator):
             batch_size (int): Size of each batch.
 
         Returns:
-            (torch.utils.data.DataLoader): Dataloader for validation.
+            (torch.utils.data.DataLoader): DataLoader for validation.
         """
         dataset = self.build_dataset(dataset_path, batch=batch_size, mode="val")
         return build_dataloader(
@@ -353,14 +355,14 @@ class DetectionValidator(BaseValidator):
             ni (int): Batch index.
             max_det (Optional[int]): Maximum number of detections to plot.
         """
-        # TODO: optimize this
+        if not preds:
+            return
         for i, pred in enumerate(preds):
             pred["batch_idx"] = torch.ones_like(pred["conf"]) * i  # add batch index to predictions
         keys = preds[0].keys()
         max_det = max_det or self.args.max_det
         batched_preds = {k: torch.cat([x[k][:max_det] for x in preds], dim=0) for k in keys}
-        # TODO: fix this
-        batched_preds["bboxes"][:, :4] = ops.xyxy2xywh(batched_preds["bboxes"][:, :4])  # convert to xywh format
+        batched_preds["bboxes"] = ops.xyxy2xywh(batched_preds["bboxes"])  # convert to xywh format
         plot_images(
             images=batch["img"],
             labels=batched_preds,
@@ -466,11 +468,11 @@ class DetectionValidator(BaseValidator):
 
         Args:
             stats (dict[str, Any]): Dictionary to store computed metrics and statistics.
-            pred_json (str | Path]): Path to JSON file containing predictions in COCO format.
-            anno_json (str | Path]): Path to JSON file containing ground truth annotations in COCO format.
-            iou_types (str | list[str]]): IoU type(s) for evaluation. Can be single string or list of strings. Common
+            pred_json (str | Path): Path to JSON file containing predictions in COCO format.
+            anno_json (str | Path): Path to JSON file containing ground truth annotations in COCO format.
+            iou_types (str | list[str]): IoU type(s) for evaluation. Can be single string or list of strings. Common
                 values include "bbox", "segm", "keypoints". Defaults to "bbox".
-            suffix (str | list[str]]): Suffix to append to metric names in stats dictionary. Should correspond to
+            suffix (str | list[str]): Suffix to append to metric names in stats dictionary. Should correspond to
                 iou_types if multiple types provided. Defaults to "Box".
 
         Returns:
@@ -500,6 +502,12 @@ class DetectionValidator(BaseValidator):
                     # update mAP50-95 and mAP50
                     stats[f"metrics/mAP50({suffix[i][0]})"] = val.stats_as_dict["AP_50"]
                     stats[f"metrics/mAP50-95({suffix[i][0]})"] = val.stats_as_dict["AP_all"]
+                    # record mAP for small, medium, large objects as well
+                    stats["metrics/mAP_small(B)"] = val.stats_as_dict["AP_small"]
+                    stats["metrics/mAP_medium(B)"] = val.stats_as_dict["AP_medium"]
+                    stats["metrics/mAP_large(B)"] = val.stats_as_dict["AP_large"]
+                    # update fitness
+                    stats["fitness"] = 0.9 * val.stats_as_dict["AP_all"] + 0.1 * val.stats_as_dict["AP_50"]
 
                     if self.is_lvis:
                         stats[f"metrics/APr({suffix[i][0]})"] = val.stats_as_dict["APr"]
