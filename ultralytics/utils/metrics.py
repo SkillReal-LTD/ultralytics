@@ -864,8 +864,14 @@ class Metric(SimpleClass):
         curves_results: Provide a list of results for accessing specific metrics like precision, recall, F1, etc.
     """
 
-    def __init__(self, fitness_weight=None) -> None:
-        """Initialize a Metric instance for computing evaluation metrics for the YOLOv8 model."""
+    def __init__(self, fitness_weight=None, class_weights=None) -> None:
+        """Initialize a Metric instance for computing evaluation metrics for the YOLOv8 model.
+
+        Args:
+            fitness_weight (list, optional): Weights for fitness calculation [P, R, mAP@0.5, mAP@0.5:0.95].
+            class_weights (list | np.ndarray, optional): Per-class weights for weighted mean metrics in fitness. When
+                provided, mp/mr/map50/map use weighted averages (favoring important classes). Length must equal nc.
+        """
         self.p = []  # (nc, )
         self.r = []  # (nc, )
         self.f1 = []  # (nc, )
@@ -877,6 +883,8 @@ class Metric(SimpleClass):
             self.fitness_weight = fitness_weight[:4]  # use first 4 for box detection
         else:
             self.fitness_weight = fitness_weight or [0.0, 0.9, 0.1, 0.0]  # default weights for SkillReal dataset
+        # Per-class weights for weighted mean metrics (None = standard unweighted mean)
+        self.class_weights = np.array(class_weights, dtype=np.float64) if class_weights is not None else None
 
     @property
     def ap50(self) -> np.ndarray | list:
@@ -941,8 +949,30 @@ class Metric(SimpleClass):
         """
         return self.all_ap.mean() if len(self.all_ap) else 0.0
 
+    def _get_detected_class_weights(self) -> np.ndarray | None:
+        """Return class weights for detected classes only (aligned with ap_class_index).
+
+        Returns:
+            (np.ndarray | None): Weights for detected classes, or None if class_weights not set.
+        """
+        if self.class_weights is None or not len(self.ap_class_index):
+            return None
+        return self.class_weights[self.ap_class_index]
+
     def mean_results(self) -> list[float]:
-        """Return mean of results, mp, mr, map50, map."""
+        """Return mean of results: mp, mr, map50, map.
+
+        When class_weights is set, computes weighted averages so that important classes
+        contribute more to the fitness score and best model selection.
+        """
+        cw = self._get_detected_class_weights()
+        if cw is not None and len(self.p):
+            # Weighted means using per-class importance weights
+            wp = np.average(self.p, weights=cw)
+            wr = np.average(self.r, weights=cw)
+            wmap50 = np.average(self.ap50, weights=cw) if len(self.ap50) else 0.0
+            wmap = np.average(self.ap, weights=cw) if len(self.ap) else 0.0
+            return [wp, wr, wmap50, wmap]
         return [self.mp, self.mr, self.map50, self.map]
 
     def class_result(self, i: int) -> tuple[float, float, float, float]:
@@ -1040,15 +1070,18 @@ class DetMetrics(SimpleClass, DataExportMixin):
         summary: Generate a summarized representation of per-class detection metrics as a list of dictionaries.
     """
 
-    def __init__(self, names: Dict[int, str] = {}, fitness_weight: list | None = None) -> None:
+    def __init__(
+        self, names: dict[int, str] = {}, fitness_weight: list | None = None, class_weights: list | None = None
+    ) -> None:
         """Initialize a DetMetrics instance with a save directory, plot flag, and class names.
 
         Args:
             names (Dict[int, str], optional): Dictionary of class names.
             fitness_weight (list, optional): Weights for fitness calculation [P, R, mAP@0.5, mAP@0.5:0.95].
+            class_weights (list, optional): Per-class importance weights for weighted mean metrics in fitness.
         """
         self.names = names
-        self.box = Metric(fitness_weight=fitness_weight)
+        self.box = Metric(fitness_weight=fitness_weight, class_weights=class_weights)
         self.speed = {"preprocess": 0.0, "inference": 0.0, "loss": 0.0, "postprocess": 0.0}
         self.task = "detect"
         self.stats = dict(tp=[], conf=[], pred_cls=[], target_cls=[], target_img=[])
@@ -1207,7 +1240,9 @@ class SegmentMetrics(DetMetrics):
         summary: Generate a summarized representation of per-class segmentation metrics as a list of dictionaries.
     """
 
-    def __init__(self, names: Dict[int, str] = {}, fitness_weight: list | None = None) -> None:
+    def __init__(
+        self, names: dict[int, str] = {}, fitness_weight: list | None = None, class_weights: list | None = None
+    ) -> None:
         """Initialize a SegmentMetrics instance with a save directory, plot flag, and class names.
 
         Args:
@@ -1216,6 +1251,7 @@ class SegmentMetrics(DetMetrics):
                 - 4 values [P, R, mAP@0.5, mAP@0.5:0.95]: same weights used for both box and mask (backward compatible)
                 - 8 values [box_P, box_R, box_mAP@0.5, box_mAP@0.5:0.95, mask_P, mask_R, mask_mAP@0.5, mask_mAP@0.5:0.95]:
                   separate weights for box and mask metrics
+            class_weights (list, optional): Per-class importance weights for weighted mean metrics in fitness.
         """
         # Split fitness weights for box and mask metrics
         if fitness_weight and len(fitness_weight) == 8:
@@ -1231,8 +1267,8 @@ class SegmentMetrics(DetMetrics):
             box_weights = fitness_weight
             mask_weights = fitness_weight
 
-        DetMetrics.__init__(self, names, box_weights)
-        self.seg = Metric(fitness_weight=mask_weights)
+        DetMetrics.__init__(self, names, box_weights, class_weights=class_weights)
+        self.seg = Metric(fitness_weight=mask_weights, class_weights=class_weights)
         self.task = "segment"
         self.stats["tp_m"] = []  # add additional stats for masks
 
@@ -1363,7 +1399,9 @@ class PoseMetrics(DetMetrics):
         summary: Generate a summarized representation of per-class pose metrics as a list of dictionaries.
     """
 
-    def __init__(self, names: Dict[int, str] = {}, fitness_weight: list | None = None) -> None:
+    def __init__(
+        self, names: dict[int, str] = {}, fitness_weight: list | None = None, class_weights: list | None = None
+    ) -> None:
         """Initialize the PoseMetrics class with directory path, class names, and plotting options.
 
         Args:
@@ -1372,6 +1410,7 @@ class PoseMetrics(DetMetrics):
                 - 4 values [P, R, mAP@0.5, mAP@0.5:0.95]: same weights used for both box and pose (backward compatible)
                 - 8 values [box_P, box_R, box_mAP@0.5, box_mAP@0.5:0.95, pose_P, pose_R, pose_mAP@0.5, pose_mAP@0.5:0.95]:
                   separate weights for box and pose metrics
+            class_weights (list, optional): Per-class importance weights for weighted mean metrics in fitness.
         """
         # Split fitness weights for box and pose metrics
         if fitness_weight and len(fitness_weight) == 8:
@@ -1387,8 +1426,8 @@ class PoseMetrics(DetMetrics):
             box_weights = fitness_weight
             pose_weights = fitness_weight
 
-        super().__init__(names, box_weights)
-        self.pose = Metric(fitness_weight=pose_weights)
+        super().__init__(names, box_weights, class_weights=class_weights)
+        self.pose = Metric(fitness_weight=pose_weights, class_weights=class_weights)
         self.task = "pose"
         self.stats["tp_p"] = []  # add additional stats for pose
 
@@ -1594,13 +1633,16 @@ class OBBMetrics(DetMetrics):
         https://arxiv.org/pdf/2106.06072.pdf
     """
 
-    def __init__(self, names: Dict[int, str] = {}, fitness_weight: list | None = None) -> None:
+    def __init__(
+        self, names: dict[int, str] = {}, fitness_weight: list | None = None, class_weights: list | None = None
+    ) -> None:
         """Initialize an OBBMetrics instance with directory, plotting, and class names.
 
         Args:
             names (Dict[int, str], optional): Dictionary of class names.
             fitness_weight (list, optional): Weights for fitness calculation [P, R, mAP@0.5, mAP@0.5:0.95].
+            class_weights (list, optional): Per-class importance weights for weighted mean metrics in fitness.
         """
-        DetMetrics.__init__(self, names, fitness_weight)
+        DetMetrics.__init__(self, names, fitness_weight, class_weights=class_weights)
         # TODO: probably remove task as well
         self.task = "obb"

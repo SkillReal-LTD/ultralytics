@@ -360,6 +360,13 @@ class v8DetectionLoss:
         self.bbox_loss = BboxLoss(m.reg_max).to(device)
         self.proj = torch.arange(m.reg_max, dtype=torch.float, device=device)
 
+        # Per-class loss weights for box/DFL loss (reduces FN for important classes)
+        cw = getattr(h, "class_weights_resolved", None)
+        if cw is not None:
+            self.class_weights = torch.tensor(cw, dtype=torch.float, device=device)  # (nc,)
+        else:
+            self.class_weights = None
+
     def preprocess(self, targets: torch.Tensor, batch_size: int, scale_tensor: torch.Tensor) -> torch.Tensor:
         """Preprocess targets by converting to tensor format and scaling coordinates."""
         nl, ne = targets.shape
@@ -421,8 +428,17 @@ class v8DetectionLoss:
 
         target_scores_sum = max(target_scores.sum(), 1)
 
-        # Cls loss
+        # Cls loss (unaffected by class_weights -- user wants detection focus, not classification)
         loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # BCE
+
+        # Apply per-class weights to target_scores for box/DFL loss weighting
+        if self.class_weights is not None:
+            # Multiply target_scores by per-class weight: (bs, h*w, nc) * (nc,) -> (bs, h*w, nc)
+            bbox_target_scores = target_scores * self.class_weights[None, None, :]
+            bbox_target_scores_sum = max(bbox_target_scores.sum(), 1)
+        else:
+            bbox_target_scores = target_scores
+            bbox_target_scores_sum = target_scores_sum
 
         # Bbox loss
         if fg_mask.sum():
@@ -431,8 +447,8 @@ class v8DetectionLoss:
                 pred_bboxes,
                 anchor_points,
                 target_bboxes / stride_tensor,
-                target_scores,
-                target_scores_sum,
+                bbox_target_scores,
+                bbox_target_scores_sum,
                 fg_mask,
                 imgsz,
                 stride_tensor,
