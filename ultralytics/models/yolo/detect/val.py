@@ -58,7 +58,10 @@ class DetectionValidator(BaseValidator):
         self.args.task = "detect"
         self.iouv = torch.linspace(0.5, 0.95, 10)  # IoU vector for mAP@0.5:0.95
         self.niou = self.iouv.numel()
-        self.metrics = DetMetrics(fitness_weight=getattr(self.args, "fitness_weight", None))
+        self.metrics = DetMetrics(
+            fitness_weight=getattr(self.args, "fitness_weight", None),
+            class_weights=getattr(self.args, "class_weights_resolved", None),
+        )
 
     def preprocess(self, batch: dict[str, Any]) -> dict[str, Any]:
         """Preprocess batch of images for YOLO validation.

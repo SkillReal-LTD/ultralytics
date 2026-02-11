@@ -79,7 +79,10 @@ class PoseValidator(DetectionValidator):
             )
             fitness_weight = None
 
-        self.metrics = PoseMetrics(fitness_weight=fitness_weight)
+        self.metrics = PoseMetrics(
+            fitness_weight=fitness_weight,
+            class_weights=getattr(self.args, "class_weights_resolved", None),
+        )
 
     def preprocess(self, batch: dict[str, Any]) -> dict[str, Any]:
         """Preprocess batch by converting keypoints data to float and moving it to the device."""
