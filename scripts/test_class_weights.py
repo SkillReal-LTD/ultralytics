@@ -3,10 +3,10 @@ Demonstration script: per-class loss weighting (class_weights) impact on FN.
 
 Trains two YOLO detection models on coco8 with identical settings except:
   - Baseline: no class_weights (all classes treated equally)
-  - Weighted: class_weights={person: 100.0} (heavily penalise missed persons)
+  - Weighted: class_weights={person: 100.0} (heavily penalize missed persons)
 
 After training, both models are validated and per-class recall (inverse of FN rate)
-is compared to show that the weighted model favours the targeted class.
+is compared to show that the weighted model favors the targeted class.
 
 NOTE: coco8 is a tiny dataset (8 images). This script is designed as a quick
       functional proof that the class_weights parameter flows through the entire
@@ -103,7 +103,7 @@ def main():
     print("=" * 70)
     print(f"\n  Target class : {target_class}")
     print(f"  Weight       : {weight_value}x (vs 1.0 for all others)")
-    print(f"  Dataset      : coco8 (8 images)")
+    print("  Dataset      : coco8 (8 images)")
     print(f"  Epochs       : {epochs}")
     print()
 
@@ -134,7 +134,7 @@ def main():
     all_classes = sorted(set(baseline["per_class_recall"]) | set(weighted["per_class_recall"]))
 
     print(f"\n  {'Class':<20} {'Baseline R':>12} {'Weighted R':>12} {'Delta':>10}")
-    print(f"  {'-'*20} {'-'*12} {'-'*12} {'-'*10}")
+    print(f"  {'-' * 20} {'-' * 12} {'-' * 12} {'-' * 10}")
 
     for cls in all_classes:
         b_r = baseline["per_class_recall"].get(cls, 0.0)
@@ -144,10 +144,14 @@ def main():
         print(f"  {cls:<20} {b_r:>12.4f} {w_r:>12.4f} {delta:>+10.4f}{marker}")
 
     print()
-    print(f"  {'Mean Recall':<20} {baseline['mean_recall']:>12.4f} {weighted['mean_recall']:>12.4f} "
-          f"{weighted['mean_recall'] - baseline['mean_recall']:>+10.4f}")
-    print(f"  {'Fitness':<20} {baseline['fitness']:>12.4f} {weighted['fitness']:>12.4f} "
-          f"{weighted['fitness'] - baseline['fitness']:>+10.4f}")
+    print(
+        f"  {'Mean Recall':<20} {baseline['mean_recall']:>12.4f} {weighted['mean_recall']:>12.4f} "
+        f"{weighted['mean_recall'] - baseline['mean_recall']:>+10.4f}"
+    )
+    print(
+        f"  {'Fitness':<20} {baseline['fitness']:>12.4f} {weighted['fitness']:>12.4f} "
+        f"{weighted['fitness'] - baseline['fitness']:>+10.4f}"
+    )
 
     # Highlight the target class specifically
     b_target = baseline["per_class_recall"].get(target_class, 0.0)
@@ -156,11 +160,12 @@ def main():
     print()
     print("=" * 70)
     if w_target >= b_target:
-        print(f"  SUCCESS: '{target_class}' recall improved or held: "
-              f"{b_target:.4f} -> {w_target:.4f} ({w_target - b_target:+.4f})")
+        print(
+            f"  SUCCESS: '{target_class}' recall improved or held: "
+            f"{b_target:.4f} -> {w_target:.4f} ({w_target - b_target:+.4f})"
+        )
     else:
-        print(f"  NOTE: '{target_class}' recall changed: "
-              f"{b_target:.4f} -> {w_target:.4f} ({w_target - b_target:+.4f})")
+        print(f"  NOTE: '{target_class}' recall changed: {b_target:.4f} -> {w_target:.4f} ({w_target - b_target:+.4f})")
     print("=" * 70)
     print()
     print("  Training artifacts saved under: runs/class_weights_demo/")

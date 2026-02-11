@@ -14,7 +14,6 @@ import torch
 
 from ultralytics.utils.metrics import DetMetrics, Metric, OBBMetrics, PoseMetrics, SegmentMetrics
 
-
 # ─── Metric-level tests ──────────────────────────────────────────────────────
 
 
@@ -37,7 +36,7 @@ def test_metric_no_class_weights():
 
 
 def test_metric_weighted_mean_results():
-    """mean_results() uses weighted averages when class_weights is set."""
+    """Mean_results() uses weighted averages when class_weights is set."""
     print("Testing Metric.mean_results() weighted path...")
     cw = [1.0, 5.0, 1.0]
     m = Metric(class_weights=cw)
@@ -59,7 +58,7 @@ def test_metric_weighted_mean_results():
 
 
 def test_metric_unweighted_mean_results():
-    """mean_results() uses simple averages when class_weights is None."""
+    """Mean_results() uses simple averages when class_weights is None."""
     print("Testing Metric.mean_results() unweighted path...")
     m = Metric()
     m.p = np.array([0.8, 0.9, 0.7])
@@ -75,7 +74,7 @@ def test_metric_unweighted_mean_results():
 
 
 def test_metric_fitness_uses_weighted():
-    """fitness() incorporates weighted mean_results when class_weights present."""
+    """Fitness() incorporates weighted mean_results when class_weights present."""
     print("Testing Metric.fitness() with class_weights...")
     cw = [1.0, 5.0, 1.0]
     m = Metric(class_weights=cw, fitness_weight=[0.0, 1.0, 0.0, 0.0])  # fitness = recall only
@@ -169,7 +168,7 @@ def test_no_class_weights_unchanged():
 
 
 def test_loss_class_weights_tensor():
-    """v8DetectionLoss stores class_weights tensor when model.args has class_weights_resolved."""
+    """V8DetectionLoss stores class_weights tensor when model.args has class_weights_resolved."""
     print("Testing v8DetectionLoss class_weights tensor init...")
     from types import SimpleNamespace
     from unittest.mock import MagicMock
@@ -178,7 +177,9 @@ def test_loss_class_weights_tensor():
     model = MagicMock()
     model.parameters.return_value = iter([torch.zeros(1)])  # device = cpu
     model.args = SimpleNamespace(
-        box=7.5, cls=0.5, dfl=1.5,
+        box=7.5,
+        cls=0.5,
+        dfl=1.5,
         class_weights_resolved=[1.0, 5.0, 1.0],
     )
     m = MagicMock()
@@ -198,7 +199,7 @@ def test_loss_class_weights_tensor():
 
 
 def test_loss_no_class_weights():
-    """v8DetectionLoss sets class_weights to None when not configured."""
+    """V8DetectionLoss sets class_weights to None when not configured."""
     print("Testing v8DetectionLoss without class_weights...")
     from types import SimpleNamespace
     from unittest.mock import MagicMock
@@ -226,7 +227,7 @@ def test_trainer_resolve_dict():
     """DetectionTrainer._resolve_class_weights resolves a name->weight dict to index list."""
     print("Testing _resolve_class_weights with dict...")
     from types import SimpleNamespace
-    from unittest.mock import MagicMock, patch
+    from unittest.mock import MagicMock
 
     trainer = MagicMock()
     trainer.data = {"nc": 3, "names": {0: "cat", 1: "bird", 2: "dog"}}
@@ -332,7 +333,7 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"  ✗ FAILED: {test_fn.__name__}: {e}")
             failed += 1
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Results: {passed} passed, {failed} failed out of {passed + failed}")
     if failed:
         raise SystemExit(1)

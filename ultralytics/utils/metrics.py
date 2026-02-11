@@ -7,7 +7,7 @@ import math
 import warnings
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import numpy as np
 import torch
@@ -869,8 +869,8 @@ class Metric(SimpleClass):
 
         Args:
             fitness_weight (list, optional): Weights for fitness calculation [P, R, mAP@0.5, mAP@0.5:0.95].
-            class_weights (list | np.ndarray, optional): Per-class weights for weighted mean metrics in fitness.
-                When provided, mp/mr/map50/map use weighted averages (favoring important classes). Length must equal nc.
+            class_weights (list | np.ndarray, optional): Per-class weights for weighted mean metrics in fitness. When
+                provided, mp/mr/map50/map use weighted averages (favoring important classes). Length must equal nc.
         """
         self.p = []  # (nc, )
         self.r = []  # (nc, )
@@ -1070,7 +1070,9 @@ class DetMetrics(SimpleClass, DataExportMixin):
         summary: Generate a summarized representation of per-class detection metrics as a list of dictionaries.
     """
 
-    def __init__(self, names: Dict[int, str] = {}, fitness_weight: list | None = None, class_weights: list | None = None) -> None:
+    def __init__(
+        self, names: dict[int, str] = {}, fitness_weight: list | None = None, class_weights: list | None = None
+    ) -> None:
         """Initialize a DetMetrics instance with a save directory, plot flag, and class names.
 
         Args:
@@ -1238,7 +1240,9 @@ class SegmentMetrics(DetMetrics):
         summary: Generate a summarized representation of per-class segmentation metrics as a list of dictionaries.
     """
 
-    def __init__(self, names: Dict[int, str] = {}, fitness_weight: list | None = None, class_weights: list | None = None) -> None:
+    def __init__(
+        self, names: dict[int, str] = {}, fitness_weight: list | None = None, class_weights: list | None = None
+    ) -> None:
         """Initialize a SegmentMetrics instance with a save directory, plot flag, and class names.
 
         Args:
@@ -1395,7 +1399,9 @@ class PoseMetrics(DetMetrics):
         summary: Generate a summarized representation of per-class pose metrics as a list of dictionaries.
     """
 
-    def __init__(self, names: Dict[int, str] = {}, fitness_weight: list | None = None, class_weights: list | None = None) -> None:
+    def __init__(
+        self, names: dict[int, str] = {}, fitness_weight: list | None = None, class_weights: list | None = None
+    ) -> None:
         """Initialize the PoseMetrics class with directory path, class names, and plotting options.
 
         Args:
@@ -1627,7 +1633,9 @@ class OBBMetrics(DetMetrics):
         https://arxiv.org/pdf/2106.06072.pdf
     """
 
-    def __init__(self, names: Dict[int, str] = {}, fitness_weight: list | None = None, class_weights: list | None = None) -> None:
+    def __init__(
+        self, names: dict[int, str] = {}, fitness_weight: list | None = None, class_weights: list | None = None
+    ) -> None:
         """Initialize an OBBMetrics instance with directory, plotting, and class names.
 
         Args:
