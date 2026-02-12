@@ -1,6 +1,9 @@
 from ultralytics import YOLO, settings
+import logging
 
 settings.update({"wandb": True})
+
+logging.getLogger("ultralytics").setLevel(logging.DEBUG)
 
 # Load model
 model = YOLO('yolo11n.pt')

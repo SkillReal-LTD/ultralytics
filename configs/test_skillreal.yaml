@@ -4,18 +4,7 @@ kpt_shape:
 names:
   0: Weld
   1: Stud
-  2: MigWeld
-  3: BackSideWeldNut
-  4: Porosity
-  5: SeamGood
-  6: SeamBad
-  7: WeldNut
-  8: Rivnut
-  9: Drill
-  10: SPR
-  11: Hole
-  12: Unknown
-path: /home/ubuntu/algo-ai-training/data/test_27072025/processed
+path: /home/ubuntu/algo-ai-training/data/test_merge_dataset/sample_small_keypoint_dataset/input/Dataloop/keypoint/2025-11-20_13-48-14/raw_data_3764/split_data
 test: test/images
 train: train/images
 val: validation/images
