@@ -3,7 +3,7 @@
 Train a model on a dataset.
 
 Usage:
-    $ yolo mode=train model=yolo11n.pt data=coco8.yaml imgsz=640 epochs=100 batch=16
+    $ yolo mode=train model=yolo26n.pt data=coco8.yaml imgsz=640 epochs=100 batch=16
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ import time
 import warnings
 from copy import copy, deepcopy
 from datetime import datetime, timedelta
+from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -27,6 +28,7 @@ from ultralytics import __version__
 from ultralytics.cfg import get_cfg, get_save_dir
 from ultralytics.data.utils import check_cls_dataset, check_det_dataset
 from ultralytics.nn.tasks import load_checkpoint
+from ultralytics.optim import MuSGD
 from ultralytics.utils import (
     DEFAULT_CFG,
     GIT,
@@ -157,8 +159,29 @@ class BaseTrainer:
         if self.device.type in {"cpu", "mps"}:
             self.args.workers = 0  # faster CPU training as time dominated by inference, not dataloading
 
+        # Callbacks - initialize early so on_pretrain_routine_start can capture original args.data
+        self.callbacks = _callbacks or callbacks.get_default_callbacks()
+
+        if isinstance(self.args.device, str) and len(self.args.device):  # i.e. device='0' or device='0,1,2,3'
+            world_size = len(self.args.device.split(","))
+        elif isinstance(self.args.device, (tuple, list)):  # i.e. device=[0, 1, 2, 3] (multi-GPU from CLI is list)
+            world_size = len(self.args.device)
+        elif self.args.device in {"cpu", "mps"}:  # i.e. device='cpu' or 'mps'
+            world_size = 0
+        elif torch.cuda.is_available():  # i.e. device=None or device='' or device=number
+            world_size = 1  # default to device 0
+        else:  # i.e. device=None or device=''
+            world_size = 0
+
+        self.ddp = world_size > 1 and "LOCAL_RANK" not in os.environ
+        self.world_size = world_size
+        # Run on_pretrain_routine_start before get_dataset() to capture original args.data (e.g., ul:// URIs)
+        if RANK in {-1, 0} and not self.ddp:
+            callbacks.add_integration_callbacks(self)
+            self.run_callbacks("on_pretrain_routine_start")
+
         # Model and Dataset
-        self.model = check_model_file_from_stem(self.args.model)  # add suffix, i.e. yolo11n -> yolo11n.pt
+        self.model = check_model_file_from_stem(self.args.model)  # add suffix, i.e. yolo26n -> yolo26n.pt
         with torch_distributed_zero_first(LOCAL_RANK):  # avoid auto-downloading dataset multiple times
             self.data = self.get_dataset()
 
@@ -185,28 +208,6 @@ class BaseTrainer:
         # HUB
         self.hub_session = None
         self.nan_recovery_attempts = 0
-
-        # Callbacks
-        self.callbacks = _callbacks or callbacks.get_default_callbacks()
-
-        if isinstance(self.args.device, str) and len(self.args.device):  # i.e. device='0' or device='0,1,2,3'
-            world_size = len(self.args.device.split(","))
-        elif isinstance(self.args.device, (tuple, list)):  # i.e. device=[0, 1, 2, 3] (multi-GPU from CLI is list)
-            world_size = len(self.args.device)
-        elif self.args.device in {"cpu", "mps"}:  # i.e. device='cpu' or 'mps'
-            world_size = 0
-        elif torch.cuda.is_available():  # i.e. device=None or device='' or device=number
-            world_size = 1  # default to device 0
-        else:  # i.e. device=None or device=''
-            world_size = 0
-
-        self.ddp = world_size > 1 and "LOCAL_RANK" not in os.environ
-        self.world_size = world_size
-        # Run subprocess if DDP training, else train normally
-        if RANK in {-1, 0} and not self.ddp:
-            callbacks.add_integration_callbacks(self)
-            # Start console logging immediately at trainer initialization
-            self.run_callbacks("on_pretrain_routine_start")
 
     def add_callback(self, event: str, callback):
         """Append the given callback to the event's callback list."""
@@ -414,10 +415,15 @@ class BaseTrainer:
                 if ni <= nw:
                     xi = [0, nw]  # x interp
                     self.accumulate = max(1, int(np.interp(ni, xi, [1, self.args.nbs / self.batch_size]).round()))
-                    for j, x in enumerate(self.optimizer.param_groups):
+                    for x in self.optimizer.param_groups:
                         # Bias lr falls from 0.1 to lr0, all other lrs rise from 0.0 to lr0
                         x["lr"] = np.interp(
-                            ni, xi, [self.args.warmup_bias_lr if j == 0 else 0.0, x["initial_lr"] * self.lf(epoch)]
+                            ni,
+                            xi,
+                            [
+                                self.args.warmup_bias_lr if x.get("param_group") == "bias" else 0.0,
+                                x["initial_lr"] * self.lf(epoch),
+                            ],
                         )
                         if "momentum" in x:
                             x["momentum"] = np.interp(ni, xi, [self.args.warmup_momentum, self.args.momentum])
@@ -470,6 +476,9 @@ class BaseTrainer:
                         self.plot_training_samples(batch, ni)
 
                 self.run_callbacks("on_train_batch_end")
+
+            if hasattr(unwrap_model(self.model).criterion, "update"):
+                unwrap_model(self.model).criterion.update()
 
             self.lr = {f"lr/pg{ir}": x["lr"] for ir, x in enumerate(self.optimizer.param_groups)}  # for loggers
 
@@ -632,27 +641,27 @@ class BaseTrainer:
     def _log_best_model_selection(self):
         """Log detailed information about why this model was chosen as the best."""
         # Get fitness weights from args if available
-        fitness_weight = getattr(self.args, 'fitness_weight', None)
+        fitness_weight = getattr(self.args, "fitness_weight", None)
         if fitness_weight is None:
             fitness_weight = [0.0, 0.0, 0.1, 0.9]  # default
 
         # Determine task type and metric names
-        task = getattr(self.args, 'task', 'detect')
+        task = getattr(self.args, "task", "detect")
 
         # Build detailed log message
         log_parts = []
-        log_parts.append(f"\n{'='*80}")
+        log_parts.append(f"\n{'=' * 80}")
         log_parts.append(f"--- New Best Model Saved at Epoch {self.epoch + 1}")
-        log_parts.append(f"{'='*80}")
+        log_parts.append(f"{'=' * 80}")
         log_parts.append(f"Best fitness: {self.fitness:.4f} (previous best: {self.best_fitness:.4f})")
         log_parts.append(f"\nFitness weights: {fitness_weight}")
 
         # Log metrics based on task type
-        if task == 'pose' and len(fitness_weight) == 8:
+        if task == "pose" and len(fitness_weight) == 8:
             # Pose task with 8 weights
             log_parts.append(f"\n--- Box Detection Metrics (weights: {fitness_weight[:4]}):")
             box_metrics = []
-            metric_names_box = ['metrics/precision(B)', 'metrics/recall(B)', 'metrics/mAP50(B)', 'metrics/mAP50-95(B)']
+            metric_names_box = ["metrics/precision(B)", "metrics/recall(B)", "metrics/mAP50(B)", "metrics/mAP50-95(B)"]
             for i, name in enumerate(metric_names_box):
                 val = self.metrics.get(name, 0.0)
                 box_metrics.append(f"{name}: {val:.4f}")
@@ -665,7 +674,7 @@ class BaseTrainer:
 
             log_parts.append(f"\n--- Pose Keypoint Metrics (weights: {fitness_weight[4:]}):")
             pose_metrics = []
-            metric_names_pose = ['metrics/precision(P)', 'metrics/recall(P)', 'metrics/mAP50(P)', 'metrics/mAP50-95(P)']
+            metric_names_pose = ["metrics/precision(P)", "metrics/recall(P)", "metrics/mAP50(P)", "metrics/mAP50-95(P)"]
             for i, name in enumerate(metric_names_pose):
                 val = self.metrics.get(name, 0.0)
                 pose_metrics.append(f"{name}: {val:.4f}")
@@ -679,11 +688,11 @@ class BaseTrainer:
             log_parts.append("\n--- Total Fitness Calculation:")
             log_parts.append(f"  {box_fitness:.4f} (box) + {pose_fitness:.4f} (pose) = {self.fitness:.4f}")
 
-        elif task == 'segment' and len(fitness_weight) == 8:
+        elif task == "segment" and len(fitness_weight) == 8:
             # Segment task with 8 weights
             log_parts.append(f"\n--- Box Detection Metrics (weights: {fitness_weight[:4]}):")
             box_metrics = []
-            metric_names_box = ['metrics/precision(B)', 'metrics/recall(B)', 'metrics/mAP50(B)', 'metrics/mAP50-95(B)']
+            metric_names_box = ["metrics/precision(B)", "metrics/recall(B)", "metrics/mAP50(B)", "metrics/mAP50-95(B)"]
             for i, name in enumerate(metric_names_box):
                 val = self.metrics.get(name, 0.0)
                 box_metrics.append(f"{name}: {val:.4f}")
@@ -696,7 +705,7 @@ class BaseTrainer:
 
             log_parts.append(f"\n--- Mask Segmentation Metrics (weights: {fitness_weight[4:]}):")
             mask_metrics = []
-            metric_names_mask = ['metrics/precision(M)', 'metrics/recall(M)', 'metrics/mAP50(M)', 'metrics/mAP50-95(M)']
+            metric_names_mask = ["metrics/precision(M)", "metrics/recall(M)", "metrics/mAP50(M)", "metrics/mAP50-95(M)"]
             for i, name in enumerate(metric_names_mask):
                 val = self.metrics.get(name, 0.0)
                 mask_metrics.append(f"{name}: {val:.4f}")
@@ -713,8 +722,8 @@ class BaseTrainer:
         else:
             # Standard task (detect, pose with 4 weights, segment with 4 weights, obb, classify)
             log_parts.append("\n--- Metrics:")
-            metric_names = ['metrics/precision(B)', 'metrics/recall(B)', 'metrics/mAP50(B)', 'metrics/mAP50-95(B)']
-            metric_labels = ['Precision', 'Recall', 'mAP@0.5', 'mAP@0.5:0.95']
+            metric_names = ["metrics/precision(B)", "metrics/recall(B)", "metrics/mAP50(B)", "metrics/mAP50-95(B)"]
+            metric_labels = ["Precision", "Recall", "mAP@0.5", "mAP@0.5:0.95"]
 
             metrics_display = []
             metric_vals = []
@@ -732,7 +741,7 @@ class BaseTrainer:
                     calc_parts.append(f"{label}({val:.4f}) × {weight}")
             log_parts.append(f"  {' + '.join(calc_parts)} = {self.fitness:.4f}")
 
-        log_parts.append(f"{'='*80}\n")
+        log_parts.append(f"{'=' * 80}\n")
 
         # Log everything - use both LOGGER and print for CloudWatch compatibility
         log_message = "\n".join(log_parts)
@@ -746,17 +755,19 @@ class BaseTrainer:
             (dict): A dictionary containing the training/validation/test dataset and category names.
         """
         try:
-            if self.args.task == "classify":
-                data = check_cls_dataset(self.args.data)
-            elif str(self.args.data).rsplit(".", 1)[-1] == "ndjson":
-                # Convert NDJSON to YOLO format
+            # Convert ul:// platform URIs and NDJSON files to local dataset format first
+            data_str = str(self.args.data)
+            if data_str.endswith(".ndjson") or (data_str.startswith("ul://") and "/datasets/" in data_str):
                 import asyncio
 
                 from ultralytics.data.converter import convert_ndjson_to_yolo
+                from ultralytics.utils.checks import check_file
 
-                yaml_path = asyncio.run(convert_ndjson_to_yolo(self.args.data))
-                self.args.data = str(yaml_path)
-                data = check_det_dataset(self.args.data)
+                self.args.data = str(asyncio.run(convert_ndjson_to_yolo(check_file(self.args.data))))
+
+            # Task-specific dataset checking
+            if self.args.task == "classify":
+                data = check_cls_dataset(self.args.data)
             elif str(self.args.data).rsplit(".", 1)[-1] in {"yaml", "yml"} or self.args.task in {
                 "detect",
                 "segment",
@@ -772,13 +783,13 @@ class BaseTrainer:
             LOGGER.info("Overriding class names with single class.")
             data["names"] = {0: "item"}
             data["nc"] = 1
-        
+
         # Override channels if specified in args
-        if hasattr(self.args, 'channels') and self.args.channels is not None:
-            if 'channels' in data and data['channels'] != self.args.channels:
+        if hasattr(self.args, "channels") and self.args.channels is not None:
+            if "channels" in data and data["channels"] != self.args.channels:
                 LOGGER.info(f"Overriding dataset channels from {data.get('channels', 3)} to {self.args.channels}")
-            data['channels'] = self.args.channels
-        
+            data["channels"] = self.args.channels
+
         return data
 
     def setup_model(self):
@@ -845,11 +856,11 @@ class BaseTrainer:
         raise NotImplementedError("This task trainer doesn't support loading cfg files")
 
     def get_validator(self):
-        """Return a NotImplementedError when the get_validator function is called."""
+        """Raise NotImplementedError (must be implemented by subclasses)."""
         raise NotImplementedError("get_validator function not implemented in trainer")
 
     def get_dataloader(self, dataset_path, batch_size=16, rank=0, mode="train"):
-        """Return dataloader derived from torch.data.Dataloader."""
+        """Raise NotImplementedError (must return a `torch.utils.data.DataLoader` in subclasses)."""
         raise NotImplementedError("get_dataloader function not implemented in trainer")
 
     def build_dataset(self, img_path, mode="train", batch=None):
@@ -943,6 +954,14 @@ class BaseTrainer:
                     "device",
                     "close_mosaic",
                     "augmentations",
+                    "save_period",
+                    "workers",
+                    "cache",
+                    "patience",
+                    "time",
+                    "freeze",
+                    "val",
+                    "plots",
                 ):  # allow arg updates to reduce memory or update device on resume
                     if k in overrides:
                         setattr(self.args, k, overrides[k])
@@ -1050,7 +1069,7 @@ class BaseTrainer:
         Returns:
             (torch.optim.Optimizer): The constructed optimizer.
         """
-        g = [], [], []  # optimizer parameter groups
+        g = [{}, {}, {}, {}]  # optimizer parameter groups
         bn = tuple(v for k, v in nn.__dict__.items() if "Norm" in k)  # normalization layers, i.e. BatchNorm2d()
         if name == "auto":
             LOGGER.info(
@@ -1060,38 +1079,62 @@ class BaseTrainer:
             )
             nc = self.data.get("nc", 10)  # number of classes
             lr_fit = round(0.002 * 5 / (4 + nc), 6)  # lr0 fit equation to 6 decimal places
-            name, lr, momentum = ("SGD", 0.01, 0.9) if iterations > 10000 else ("AdamW", lr_fit, 0.9)
+            name, lr, momentum = ("MuSGD", 0.01, 0.9) if iterations > 10000 else ("AdamW", lr_fit, 0.9)
             self.args.warmup_bias_lr = 0.0  # no higher than 0.01 for Adam
 
-        for module_name, module in model.named_modules():
+        use_muon = name == "MuSGD"
+        for module_name, module in unwrap_model(model).named_modules():
             for param_name, param in module.named_parameters(recurse=False):
                 fullname = f"{module_name}.{param_name}" if module_name else param_name
-                if "bias" in fullname:  # bias (no decay)
-                    g[2].append(param)
+                if param.ndim >= 2 and use_muon:
+                    g[3][fullname] = param  # muon params
+                elif "bias" in fullname:  # bias (no decay)
+                    g[2][fullname] = param
                 elif isinstance(module, bn) or "logit_scale" in fullname:  # weight (no decay)
                     # ContrastiveHead and BNContrastiveHead included here with 'logit_scale'
-                    g[1].append(param)
+                    g[1][fullname] = param
                 else:  # weight (with decay)
-                    g[0].append(param)
+                    g[0][fullname] = param
+        if not use_muon:
+            g = [x.values() for x in g[:3]]  # convert to list of params
 
-        optimizers = {"Adam", "Adamax", "AdamW", "NAdam", "RAdam", "RMSProp", "SGD", "auto"}
+        optimizers = {"Adam", "Adamax", "AdamW", "NAdam", "RAdam", "RMSProp", "SGD", "MuSGD", "auto"}
         name = {x.lower(): x for x in optimizers}.get(name.lower())
         if name in {"Adam", "Adamax", "AdamW", "NAdam", "RAdam"}:
-            optimizer = getattr(optim, name, optim.Adam)(g[2], lr=lr, betas=(momentum, 0.999), weight_decay=0.0)
+            optim_args = dict(lr=lr, betas=(momentum, 0.999), weight_decay=0.0)
         elif name == "RMSProp":
-            optimizer = optim.RMSprop(g[2], lr=lr, momentum=momentum)
-        elif name == "SGD":
-            optimizer = optim.SGD(g[2], lr=lr, momentum=momentum, nesterov=True)
+            optim_args = dict(lr=lr, momentum=momentum)
+        elif name == "SGD" or name == "MuSGD":
+            optim_args = dict(lr=lr, momentum=momentum, nesterov=True)
         else:
             raise NotImplementedError(
                 f"Optimizer '{name}' not found in list of available optimizers {optimizers}. "
                 "Request support for addition optimizers at https://github.com/ultralytics/ultralytics."
             )
 
-        optimizer.add_param_group({"params": g[0], "weight_decay": decay})  # add g0 with weight_decay
-        optimizer.add_param_group({"params": g[1], "weight_decay": 0.0})  # add g1 (BatchNorm2d weights)
+        num_params = [len(g[0]), len(g[1]), len(g[2])]  # number of param groups
+        g[2] = {"params": g[2], **optim_args, "param_group": "bias"}
+        g[0] = {"params": g[0], **optim_args, "weight_decay": decay, "param_group": "weight"}
+        g[1] = {"params": g[1], **optim_args, "weight_decay": 0.0, "param_group": "bn"}
+        muon, sgd = (0.2, 1.0)
+        if use_muon:
+            num_params[0] = len(g[3])  # update number of params
+            g[3] = {"params": g[3], **optim_args, "weight_decay": decay, "use_muon": True, "param_group": "muon"}
+            import re
+
+            # higher lr for certain parameters in MuSGD when funetuning
+            pattern = re.compile(r"(?=.*23)(?=.*cv3)|proto\.semseg")
+            g_ = []  # new param groups
+            for x in g:
+                p = x.pop("params")
+                p1 = [v for k, v in p.items() if pattern.search(k)]
+                p2 = [v for k, v in p.items() if not pattern.search(k)]
+                g_.extend([{"params": p1, **x, "lr": lr * 3}, {"params": p2, **x}])
+            g = g_
+        optimizer = getattr(optim, name, partial(MuSGD, muon=muon, sgd=sgd))(params=g)
+
         LOGGER.info(
             f"{colorstr('optimizer:')} {type(optimizer).__name__}(lr={lr}, momentum={momentum}) with parameter groups "
-            f"{len(g[1])} weight(decay=0.0), {len(g[0])} weight(decay={decay}), {len(g[2])} bias(decay=0.0)"
+            f"{num_params[1]} weight(decay=0.0), {num_params[0]} weight(decay={decay}), {num_params[2]} bias(decay=0.0)"
         )
         return optimizer

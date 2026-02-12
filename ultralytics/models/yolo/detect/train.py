@@ -47,13 +47,13 @@ class DetectionTrainer(BaseTrainer):
 
     Examples:
         >>> from ultralytics.models.yolo.detect import DetectionTrainer
-        >>> args = dict(model="yolo11n.pt", data="coco8.yaml", epochs=3)
+        >>> args = dict(model="yolo26n.pt", data="coco8.yaml", epochs=3)
         >>> trainer = DetectionTrainer(overrides=args)
         >>> trainer.train()
     """
 
     def __init__(self, cfg=DEFAULT_CFG, overrides: dict[str, Any] | None = None, _callbacks=None):
-        """Initialize a DetectionTrainer object for training YOLO object detection model training.
+        """Initialize a DetectionTrainer object for training YOLO object detection models.
 
         Args:
             cfg (dict, optional): Default configuration dictionary containing training parameters.
@@ -73,7 +73,7 @@ class DetectionTrainer(BaseTrainer):
         Returns:
             (Dataset): YOLO dataset object configured for the specified mode.
         """
-        gs = max(int(unwrap_model(self.model).stride.max() if self.model else 0), 32)
+        gs = max(int(unwrap_model(self.model).stride.max()), 32)
         return build_yolo_dataset(self.args, img_path, batch, self.data, mode=mode, rect=mode == "val", stride=gs)
 
     def get_dataloader(self, dataset_path: str, batch_size: int = 16, rank: int = 0, mode: str = "train"):
@@ -92,7 +92,7 @@ class DetectionTrainer(BaseTrainer):
         with torch_distributed_zero_first(rank):  # init dataset *.cache only once if DDP
             dataset = self.build_dataset(dataset_path, mode, batch_size)
         shuffle = mode == "train"
-        if getattr(dataset, "rect", False) and shuffle:
+        if getattr(dataset, "rect", False) and shuffle and not np.all(dataset.batch_shapes == dataset.batch_shapes[0]):
             LOGGER.warning("'rect=True' is incompatible with DataLoader shuffle, setting shuffle=False")
             shuffle = False
         return build_dataloader(
@@ -117,10 +117,13 @@ class DetectionTrainer(BaseTrainer):
             if isinstance(v, torch.Tensor):
                 batch[k] = v.to(self.device, non_blocking=self.device.type == "cuda")
         batch["img"] = batch["img"].float() / 255
-        if self.args.multi_scale:
+        if self.args.multi_scale > 0.0:
             imgs = batch["img"]
             sz = (
-                random.randrange(int(self.args.imgsz * 0.5), int(self.args.imgsz * 1.5 + self.stride))
+                random.randrange(
+                    int(self.args.imgsz * (1.0 - self.args.multi_scale)),
+                    int(self.args.imgsz * (1.0 + self.args.multi_scale) + self.stride),
+                )
                 // self.stride
                 * self.stride
             )  # size
@@ -142,7 +145,56 @@ class DetectionTrainer(BaseTrainer):
         self.model.nc = self.data["nc"]  # attach number of classes to model
         self.model.names = self.data["names"]  # attach class names to model
         self.model.args = self.args  # attach hyperparameters to model
-        # TODO: self.model.class_weights = labels_to_class_weights(dataset.labels, nc).to(device) * nc
+        if getattr(self.model, "end2end"):
+            self.model.set_head_attr(max_det=self.args.max_det)
+
+        # Resolve class_weights from config (dict of name->weight or list) into a list indexed by class ID
+        self._resolve_class_weights()
+
+    def _resolve_class_weights(self):
+        """Resolve class_weights config into a list of floats indexed by class ID.
+
+        Accepts either a dict mapping class names to weights (e.g. {"cone": 5.0}) or a list of floats (one per class).
+        Classes not specified in a dict default to weight 1.0. The resolved list is stored in
+        ``self.args.class_weights_resolved`` and also logged for visibility.
+        """
+        raw = getattr(self.args, "class_weights", None)
+        if not raw:
+            self.args.class_weights_resolved = None
+            return
+
+        nc = self.data["nc"]
+        names = self.data["names"]  # {0: "cat", 1: "bird", 2: "dog", ...}
+
+        if isinstance(raw, dict):
+            # Build name -> index lookup
+            name_to_idx = {v: k for k, v in names.items()}
+            resolved = [1.0] * nc
+            for cls_name, weight in raw.items():
+                if cls_name not in name_to_idx:
+                    LOGGER.warning(
+                        f"class_weights: class '{cls_name}' not found in dataset classes {list(names.values())}. "
+                        f"Ignoring."
+                    )
+                    continue
+                resolved[name_to_idx[cls_name]] = float(weight)
+        elif isinstance(raw, (list, tuple)):
+            if len(raw) != nc:
+                raise ValueError(
+                    f"class_weights list length ({len(raw)}) must match number of classes ({nc}). "
+                    f"Dataset classes: {list(names.values())}"
+                )
+            resolved = [float(w) for w in raw]
+        else:
+            raise TypeError(
+                f"class_weights must be a dict or list, got {type(raw).__name__}. "
+                f"Example: class_weights={{cone: 5.0, person: 1.0}} or class_weights=[1.0, 5.0, 1.0]"
+            )
+
+        self.args.class_weights_resolved = resolved
+        # Log resolved weights
+        weight_str = ", ".join(f"{names[i]}: {resolved[i]}" for i in range(nc))
+        LOGGER.info(f"Class weights resolved: {{{weight_str}}}")
 
     def get_model(self, cfg: str | None = None, weights: str | None = None, verbose: bool = True):
         """Return a YOLO detection model.

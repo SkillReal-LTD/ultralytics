@@ -1,6 +1,6 @@
 kpt_shape:
-- 2
-- 3
+  - 2
+  - 3
 names:
   0: Weld
   1: Stud
