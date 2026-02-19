@@ -1,5 +1,6 @@
-from ultralytics import YOLO, settings
 import logging
+
+from ultralytics import YOLO, settings
 
 settings.update({"wandb": True})
 
