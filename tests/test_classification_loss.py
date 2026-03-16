@@ -19,12 +19,13 @@ Tests cover:
  16. ArcFace basic forward + backward
  17. ArcFace produces higher loss than CE (due to angular margin)
  18. ArcFace with class_weights differs from without
- 19. ArcFace margin=0, scale=1 ≈ normalised cosine CE
+ 19. ArcFace margin=0, scale=1 ≈ normalized cosine CE
  20. Classify head returns features when _return_features=True
  21. init_criterion resets _return_features when switching ArcFace → CE
  22. init_criterion with no args returns plain CE (legacy compat)
  23. ArcFace eval fallback uses CE on logits
 """
+
 from __future__ import annotations
 
 import sys
@@ -176,9 +177,7 @@ def test_cb_focal_combined_weights():
     loss_fn_combined = v8ClassificationLoss(
         cls_loss="cb_focal", class_counts=counts, class_weights=user_weights, focal_gamma=2.0, cb_beta=0.999
     )
-    loss_fn_auto = v8ClassificationLoss(
-        cls_loss="cb_focal", class_counts=counts, focal_gamma=2.0, cb_beta=0.999
-    )
+    loss_fn_auto = v8ClassificationLoss(cls_loss="cb_focal", class_counts=counts, focal_gamma=2.0, cb_beta=0.999)
 
     preds = _make_preds(8, 5)
     batch = _make_batch([0, 1, 2, 3, 4, 0, 1, 1])
@@ -186,13 +185,8 @@ def test_cb_focal_combined_weights():
     loss_combined, _ = loss_fn_combined(preds, batch)
     loss_auto, _ = loss_fn_auto(preds, batch)
 
-    assert not torch.allclose(loss_combined, loss_auto, atol=1e-4), (
-        "Combined weights should differ from auto-only"
-    )
-    print(
-        f"[PASS] cb_focal + user weights: combined={loss_combined.item():.5f}, "
-        f"auto={loss_auto.item():.5f}"
-    )
+    assert not torch.allclose(loss_combined, loss_auto, atol=1e-4), "Combined weights should differ from auto-only"
+    print(f"[PASS] cb_focal + user weights: combined={loss_combined.item():.5f}, auto={loss_auto.item():.5f}")
 
 
 # ──────────────────────────────────────── 9. Invalid cls_loss ────────────────
@@ -247,9 +241,7 @@ def test_resolve_class_weights_dict():
 
     trainer._resolve_class_weights()
 
-    assert trainer.args.class_weights_resolved == [3.0, 1.0, 5.0], (
-        f"Got {trainer.args.class_weights_resolved}"
-    )
+    assert trainer.args.class_weights_resolved == [3.0, 1.0, 5.0], f"Got {trainer.args.class_weights_resolved}"
     print(f"[PASS] resolve_class_weights dict: {trainer.args.class_weights_resolved}")
 
 
@@ -304,9 +296,7 @@ def test_higher_gamma_reduces_easy_loss():
     assert loss_high < loss_low, (
         f"Higher γ should reduce easy loss: γ=0.5 → {loss_low.item():.6f}, γ=5.0 → {loss_high.item():.6f}"
     )
-    print(
-        f"[PASS] higher gamma focuses more: γ=0.5={loss_low.item():.6f}, γ=5.0={loss_high.item():.6f}"
-    )
+    print(f"[PASS] higher gamma focuses more: γ=0.5={loss_low.item():.6f}, γ=5.0={loss_high.item():.6f}")
 
 
 # ──────────────────────────────────────── 16. ArcFace basic ───────────────────
@@ -326,9 +316,7 @@ def test_arcface_basic():
     """ArcFace loss should be computable and differentiable."""
     nc, feat_dim, bs = 5, 128, 8
     fc_weight = _make_fc_weight(nc, feat_dim)
-    loss_fn = v8ClassificationLoss(
-        cls_loss="arcface", arcface_margin=0.5, arcface_scale=30.0, fc_weight=fc_weight
-    )
+    loss_fn = v8ClassificationLoss(cls_loss="arcface", arcface_margin=0.5, arcface_scale=30.0, fc_weight=fc_weight)
 
     features = _make_features(bs, feat_dim)
     batch = _make_batch([0, 1, 2, 3, 4, 0, 1, 2])
@@ -344,7 +332,7 @@ def test_arcface_basic():
 
 # ──────────────────────────────────────── 17. ArcFace > CE ────────────────────
 def test_arcface_higher_than_ce_equivalent():
-    """ArcFace with margin > 0 should produce higher loss than normalised cosine CE (margin=0)."""
+    """ArcFace with margin > 0 should produce higher loss than normalized cosine CE (margin=0)."""
     nc, feat_dim, bs = 5, 128, 16
     fc_weight = _make_fc_weight(nc, feat_dim)
 
@@ -365,8 +353,7 @@ def test_arcface_higher_than_ce_equivalent():
         f"Margin should increase loss: margin={loss_margin.item():.5f} > no_margin={loss_no_margin.item():.5f}"
     )
     print(
-        f"[PASS] ArcFace margin increases loss: m=0.5 → {loss_margin.item():.5f}, "
-        f"m=0.0 → {loss_no_margin.item():.5f}"
+        f"[PASS] ArcFace margin increases loss: m=0.5 → {loss_margin.item():.5f}, m=0.0 → {loss_no_margin.item():.5f}"
     )
 
 
@@ -378,11 +365,16 @@ def test_arcface_with_class_weights():
     weights = [1.0, 1.0, 1.0, 1.0, 5.0]
 
     loss_fn_w = v8ClassificationLoss(
-        cls_loss="arcface", arcface_margin=0.5, arcface_scale=30.0,
-        fc_weight=fc_weight, class_weights=weights,
+        cls_loss="arcface",
+        arcface_margin=0.5,
+        arcface_scale=30.0,
+        fc_weight=fc_weight,
+        class_weights=weights,
     )
     loss_fn_u = v8ClassificationLoss(
-        cls_loss="arcface", arcface_margin=0.5, arcface_scale=30.0,
+        cls_loss="arcface",
+        arcface_margin=0.5,
+        arcface_scale=30.0,
         fc_weight=fc_weight,
     )
 
@@ -402,15 +394,13 @@ def test_arcface_zero_margin():
     nc, feat_dim, bs = 3, 64, 8
     fc_weight = _make_fc_weight(nc, feat_dim)
 
-    loss_fn = v8ClassificationLoss(
-        cls_loss="arcface", arcface_margin=0.0, arcface_scale=1.0, fc_weight=fc_weight
-    )
+    loss_fn = v8ClassificationLoss(cls_loss="arcface", arcface_margin=0.0, arcface_scale=1.0, fc_weight=fc_weight)
     features = _make_features(bs, feat_dim)
     batch = _make_batch([0, 1, 2, 0, 1, 2, 0, 1])
 
     loss_af, _ = loss_fn(features, batch)
 
-    # Manual cosine CE: normalise feat & weight, compute cos, cross_entropy
+    # Manual cosine CE: normalize feat & weight, compute cos, cross_entropy
     with torch.no_grad():
         feat_n = torch.nn.functional.normalize(features, dim=1)
         w_n = torch.nn.functional.normalize(fc_weight, dim=1)
@@ -472,9 +462,7 @@ def test_init_criterion_resets_return_features():
     criterion = model.init_criterion()
 
     # Head flag must be reset
-    assert head._return_features is False, (
-        "_return_features should be False after switching from ArcFace to CE"
-    )
+    assert head._return_features is False, "_return_features should be False after switching from ArcFace to CE"
     # Criterion should be plain CE
     assert criterion.cls_loss == "ce"
     print("[PASS] init_criterion resets _return_features when cls_loss != 'arcface'")
@@ -511,7 +499,10 @@ def test_arcface_eval_fallback_uses_logits():
     nc, feat_dim, bs = 5, 128, 8
     fc_weight = _make_fc_weight(nc, feat_dim)
     loss_fn = v8ClassificationLoss(
-        cls_loss="arcface", arcface_margin=0.5, arcface_scale=30.0, fc_weight=fc_weight,
+        cls_loss="arcface",
+        arcface_margin=0.5,
+        arcface_scale=30.0,
+        fc_weight=fc_weight,
     )
 
     # Simulate eval-mode output: (probs, logits)

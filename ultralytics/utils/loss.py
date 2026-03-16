@@ -987,8 +987,8 @@ class v8ClassificationLoss:
         cb_beta (float): Class-balanced effective-number β in ``[0, 1)``.
         arcface_margin (float): ArcFace additive angular margin *m* in radians.
         arcface_scale (float): ArcFace logit re-scaling factor *s*.
-        fc_weight (torch.nn.Parameter | None): Reference to the Classify head's ``linear.weight``
-            parameter (shape ``(nc, feat_dim)``). Required when ``cls_loss='arcface'``.
+        fc_weight (torch.nn.Parameter | None): Reference to the Classify head's ``linear.weight`` parameter (shape
+            ``(nc, feat_dim)``). Required when ``cls_loss='arcface'``.
     """
 
     _VALID_LOSSES = {"ce", "focal", "cb_focal", "arcface"}
@@ -1006,9 +1006,7 @@ class v8ClassificationLoss:
         fc_weight: torch.nn.Parameter | None = None,
     ):
         if cls_loss not in self._VALID_LOSSES:
-            raise ValueError(
-                f"Invalid cls_loss='{cls_loss}'. Must be one of {sorted(self._VALID_LOSSES)}."
-            )
+            raise ValueError(f"Invalid cls_loss='{cls_loss}'. Must be one of {sorted(self._VALID_LOSSES)}.")
         self.cls_loss = cls_loss
         self.label_smoothing = label_smoothing
         self.focal_gamma = focal_gamma
@@ -1027,9 +1025,9 @@ class v8ClassificationLoss:
         if cls_loss == "cb_focal" and class_counts is not None:
             # Effective-number weighting: w_c = (1 - β) / (1 - β^n_c)
             counts = torch.tensor(class_counts, dtype=torch.float32)
-            effective_num = 1.0 - self.cb_beta ** counts
+            effective_num = 1.0 - self.cb_beta**counts
             cb_weights = (1.0 - self.cb_beta) / effective_num
-            cb_weights = cb_weights / cb_weights.sum() * len(cb_weights)  # normalise so mean ≈ 1
+            cb_weights = cb_weights / cb_weights.sum() * len(cb_weights)  # normalize so mean ≈ 1
             if importance is not None:
                 cb_weights = cb_weights * importance  # combine with user importance
             self._weight = cb_weights
@@ -1082,9 +1080,7 @@ class v8ClassificationLoss:
         return loss, loss.detach()
 
     # ---------------------------------------------------------------------- focal loss
-    def _focal_loss(
-        self, preds: torch.Tensor, targets: torch.Tensor, weight: torch.Tensor | None
-    ) -> torch.Tensor:
+    def _focal_loss(self, preds: torch.Tensor, targets: torch.Tensor, weight: torch.Tensor | None) -> torch.Tensor:
         """Multi-class focal loss with optional per-class weights and label smoothing.
 
         Implements: FL(p_t) = -α_t * (1 - p_t)^γ * log(p_t)
