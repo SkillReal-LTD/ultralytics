@@ -721,9 +721,7 @@ class ClassificationModel(BaseModel):
                 head._return_features = True
                 fc_weight = head.linear.weight  # nn.Parameter (nc, feat_dim)
             else:
-                LOGGER.warning(
-                    "cls_loss='arcface' requires a Classify head; falling back to 'ce'."
-                )
+                LOGGER.warning("cls_loss='arcface' requires a Classify head; falling back to 'ce'.")
                 cls_loss = "ce"
         elif isinstance(head, Classify):
             # Ensure _return_features is off when not using ArcFace (safety for

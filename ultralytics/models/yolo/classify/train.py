@@ -138,9 +138,7 @@ class ClassificationTrainer(BaseTrainer):
             )
 
         self.args.class_counts = counts
-        LOGGER.info(
-            f"Classification class counts (train): {dict(zip(self.data['names'].values(), counts))}"
-        )
+        LOGGER.info(f"Classification class counts (train): {dict(zip(self.data['names'].values(), counts))}")
 
     def get_model(self, cfg=None, weights=None, verbose: bool = True):
         """Return a modified PyTorch model configured for training YOLO classification.

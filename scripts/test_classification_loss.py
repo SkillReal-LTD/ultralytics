@@ -17,6 +17,7 @@ Trains 9 models (50 epochs each) with aggressive Reject-boosting to show the eff
 Usage:
     python scripts/test_classification_loss.py
 """
+
 from __future__ import annotations
 
 import random
@@ -169,14 +170,10 @@ def main():
     )
 
     # 4. Focal loss γ=2.0
-    results.append(
-        train_and_evaluate("focal_g2", data_dir, cls_loss="focal", focal_gamma=2.0, epochs=epochs)
-    )
+    results.append(train_and_evaluate("focal_g2", data_dir, cls_loss="focal", focal_gamma=2.0, epochs=epochs))
 
     # 5. Focal loss γ=5.0 — stronger hard-example focus
-    results.append(
-        train_and_evaluate("focal_g5", data_dir, cls_loss="focal", focal_gamma=5.0, epochs=epochs)
-    )
+    results.append(train_and_evaluate("focal_g5", data_dir, cls_loss="focal", focal_gamma=5.0, epochs=epochs))
 
     # 6. Focal loss γ=2 + Reject ×10
     results.append(
@@ -192,9 +189,7 @@ def main():
 
     # 7. Class-balanced focal γ=2 (auto frequency weights)
     results.append(
-        train_and_evaluate(
-            "cb_focal_g2", data_dir, cls_loss="cb_focal", focal_gamma=2.0, cb_beta=0.999, epochs=epochs
-        )
+        train_and_evaluate("cb_focal_g2", data_dir, cls_loss="cb_focal", focal_gamma=2.0, cb_beta=0.999, epochs=epochs)
     )
 
     # 8. Class-balanced focal γ=2 + extra Reject ×10
@@ -211,34 +206,32 @@ def main():
     )
 
     # 9. CE + label smoothing
-    results.append(
-        train_and_evaluate(
-            "ce_label_smooth", data_dir, cls_loss="ce", label_smoothing=0.1, epochs=epochs
-        )
-    )
+    results.append(train_and_evaluate("ce_label_smooth", data_dir, cls_loss="ce", label_smoothing=0.1, epochs=epochs))
 
     # 10. ArcFace — default margin=0.5, scale=30
     results.append(
         train_and_evaluate(
-            "arcface_m05_s30", data_dir, cls_loss="arcface",
-            arcface_margin=0.5, arcface_scale=30.0, epochs=epochs
+            "arcface_m05_s30", data_dir, cls_loss="arcface", arcface_margin=0.5, arcface_scale=30.0, epochs=epochs
         )
     )
 
     # 11. ArcFace — larger margin for stricter separation
     results.append(
         train_and_evaluate(
-            "arcface_m10_s30", data_dir, cls_loss="arcface",
-            arcface_margin=1.0, arcface_scale=30.0, epochs=epochs
+            "arcface_m10_s30", data_dir, cls_loss="arcface", arcface_margin=1.0, arcface_scale=30.0, epochs=epochs
         )
     )
 
     # 12. ArcFace + class_weights boosting Reject
     results.append(
         train_and_evaluate(
-            "arcface_m05_w10", data_dir, cls_loss="arcface",
-            arcface_margin=0.5, arcface_scale=30.0,
-            class_weights={rare_class: 10.0}, epochs=epochs
+            "arcface_m05_w10",
+            data_dir,
+            cls_loss="arcface",
+            arcface_margin=0.5,
+            arcface_scale=30.0,
+            class_weights={rare_class: 10.0},
+            epochs=epochs,
         )
     )
 
