@@ -14,6 +14,16 @@ Tests cover:
  11. ClassificationTrainer._resolve_class_weights (dict)
  12. ClassificationTrainer._resolve_class_weights (list)
  13. ClassificationTrainer._resolve_class_weights (missing classes default to 1.0)
+ 14. Focal γ=0 ≈ CE
+ 15. Higher gamma focuses more on hard examples
+ 16. ArcFace basic forward + backward
+ 17. ArcFace produces higher loss than CE (due to angular margin)
+ 18. ArcFace with class_weights differs from without
+ 19. ArcFace margin=0, scale=1 ≈ normalised cosine CE
+ 20. Classify head returns features when _return_features=True
+ 21. init_criterion resets _return_features when switching ArcFace → CE
+ 22. init_criterion with no args returns plain CE (legacy compat)
+ 23. ArcFace eval fallback uses CE on logits
 """
 from __future__ import annotations
 
@@ -299,6 +309,226 @@ def test_higher_gamma_reduces_easy_loss():
     )
 
 
+# ──────────────────────────────────────── 16. ArcFace basic ───────────────────
+def _make_fc_weight(nc: int, feat_dim: int, device: str = "cpu") -> torch.nn.Parameter:
+    """Create a mock FC weight parameter (nc, feat_dim)."""
+    torch.manual_seed(123)
+    return torch.nn.Parameter(torch.randn(nc, feat_dim, device=device))
+
+
+def _make_features(batch_size: int, feat_dim: int, device: str = "cpu") -> torch.Tensor:
+    """Return raw features (B, feat_dim)."""
+    torch.manual_seed(42)
+    return torch.randn(batch_size, feat_dim, device=device, requires_grad=True)
+
+
+def test_arcface_basic():
+    """ArcFace loss should be computable and differentiable."""
+    nc, feat_dim, bs = 5, 128, 8
+    fc_weight = _make_fc_weight(nc, feat_dim)
+    loss_fn = v8ClassificationLoss(
+        cls_loss="arcface", arcface_margin=0.5, arcface_scale=30.0, fc_weight=fc_weight
+    )
+
+    features = _make_features(bs, feat_dim)
+    batch = _make_batch([0, 1, 2, 3, 4, 0, 1, 2])
+
+    loss, loss_det = loss_fn(features, batch)
+    loss.backward()
+
+    assert loss.item() > 0, "ArcFace loss should be positive"
+    assert features.grad is not None, "ArcFace loss should be differentiable w.r.t. features"
+    assert loss_det.requires_grad is False
+    print(f"[PASS] ArcFace basic: loss={loss.item():.5f}")
+
+
+# ──────────────────────────────────────── 17. ArcFace > CE ────────────────────
+def test_arcface_higher_than_ce_equivalent():
+    """ArcFace with margin > 0 should produce higher loss than normalised cosine CE (margin=0)."""
+    nc, feat_dim, bs = 5, 128, 16
+    fc_weight = _make_fc_weight(nc, feat_dim)
+
+    loss_fn_margin = v8ClassificationLoss(
+        cls_loss="arcface", arcface_margin=0.5, arcface_scale=30.0, fc_weight=fc_weight
+    )
+    loss_fn_no_margin = v8ClassificationLoss(
+        cls_loss="arcface", arcface_margin=0.0, arcface_scale=30.0, fc_weight=fc_weight
+    )
+
+    features = _make_features(bs, feat_dim)
+    batch = _make_batch(list(range(nc)) * (bs // nc) + list(range(bs % nc)))
+
+    loss_margin, _ = loss_fn_margin(features, batch)
+    loss_no_margin, _ = loss_fn_no_margin(features.detach().clone().requires_grad_(True), batch)
+
+    assert loss_margin > loss_no_margin, (
+        f"Margin should increase loss: margin={loss_margin.item():.5f} > no_margin={loss_no_margin.item():.5f}"
+    )
+    print(
+        f"[PASS] ArcFace margin increases loss: m=0.5 → {loss_margin.item():.5f}, "
+        f"m=0.0 → {loss_no_margin.item():.5f}"
+    )
+
+
+# ──────────────────────────────────────── 18. ArcFace + class_weights ─────────
+def test_arcface_with_class_weights():
+    """ArcFace with class_weights should produce different loss than without."""
+    nc, feat_dim, bs = 5, 128, 8
+    fc_weight = _make_fc_weight(nc, feat_dim)
+    weights = [1.0, 1.0, 1.0, 1.0, 5.0]
+
+    loss_fn_w = v8ClassificationLoss(
+        cls_loss="arcface", arcface_margin=0.5, arcface_scale=30.0,
+        fc_weight=fc_weight, class_weights=weights,
+    )
+    loss_fn_u = v8ClassificationLoss(
+        cls_loss="arcface", arcface_margin=0.5, arcface_scale=30.0,
+        fc_weight=fc_weight,
+    )
+
+    features = _make_features(bs, feat_dim)
+    batch = _make_batch([0, 1, 2, 3, 4, 0, 1, 4])
+
+    loss_w, _ = loss_fn_w(features, batch)
+    loss_u, _ = loss_fn_u(features.detach().clone().requires_grad_(True), batch)
+
+    assert not torch.allclose(loss_w, loss_u, atol=1e-4), "ArcFace w/ weights should differ"
+    print(f"[PASS] ArcFace + weights: weighted={loss_w.item():.5f}, unweighted={loss_u.item():.5f}")
+
+
+# ──────────────────────────────────────── 19. ArcFace margin=0 ≈ cosine CE ───
+def test_arcface_zero_margin():
+    """ArcFace with margin=0 and scale=1 should equal normalised-cosine CE."""
+    nc, feat_dim, bs = 3, 64, 8
+    fc_weight = _make_fc_weight(nc, feat_dim)
+
+    loss_fn = v8ClassificationLoss(
+        cls_loss="arcface", arcface_margin=0.0, arcface_scale=1.0, fc_weight=fc_weight
+    )
+    features = _make_features(bs, feat_dim)
+    batch = _make_batch([0, 1, 2, 0, 1, 2, 0, 1])
+
+    loss_af, _ = loss_fn(features, batch)
+
+    # Manual cosine CE: normalise feat & weight, compute cos, cross_entropy
+    with torch.no_grad():
+        feat_n = torch.nn.functional.normalize(features, dim=1)
+        w_n = torch.nn.functional.normalize(fc_weight, dim=1)
+        cos_logits = feat_n @ w_n.T  # scale=1
+        expected = torch.nn.functional.cross_entropy(cos_logits, batch["cls"])
+
+    assert torch.allclose(loss_af, expected, atol=1e-4), (
+        f"ArcFace m=0,s=1 should ≈ cosine CE: af={loss_af.item():.5f}, expected={expected.item():.5f}"
+    )
+    print(f"[PASS] ArcFace m=0, s=1 ≈ cosine CE: {loss_af.item():.5f} ≈ {expected.item():.5f}")
+
+
+# ──────────────────────────────────────── 20. Classify _return_features ───────
+def test_classify_return_features():
+    """Classify head should return features (not logits) when _return_features=True."""
+    from ultralytics.nn.modules.head import Classify
+
+    head = Classify(c1=256, c2=10)
+    head.train()
+    x = torch.randn(2, 256, 8, 8)
+
+    # Normal mode: returns logits (B, 10)
+    out_normal = head(x)
+    assert out_normal.shape == (2, 10), f"Expected (2,10) logits, got {out_normal.shape}"
+
+    # ArcFace mode: returns features (B, 1280)
+    head._return_features = True
+    out_features = head(x)
+    assert out_features.shape == (2, 1280), f"Expected (2,1280) features, got {out_features.shape}"
+
+    # Eval mode: should still return normal (probs, logits) regardless of flag
+    head.eval()
+    out_eval = head(x)
+    assert isinstance(out_eval, tuple) and len(out_eval) == 2, "Eval should return (probs, logits)"
+    assert out_eval[0].shape == (2, 10)
+
+    print("[PASS] Classify _return_features works correctly")
+
+
+# ──────────────────────────────────────── 21. Backward compat: ArcFace→CE ────
+def test_init_criterion_resets_return_features():
+    """Switching from ArcFace to CE should reset _return_features on the Classify head."""
+    from types import SimpleNamespace
+
+    from ultralytics.nn.modules.head import Classify
+    from ultralytics.nn.tasks import ClassificationModel
+
+    # Build a minimal ClassificationModel via __new__ then manually init nn.Module internals
+    model = ClassificationModel.__new__(ClassificationModel)
+    torch.nn.Module.__init__(model)
+    head = Classify(c1=256, c2=5)
+    model.model = torch.nn.ModuleList([head])
+
+    # Simulate: previously trained with ArcFace (instance attr set to True)
+    head._return_features = True
+
+    # Now retrain with plain CE
+    model.args = SimpleNamespace(cls_loss="ce")
+    criterion = model.init_criterion()
+
+    # Head flag must be reset
+    assert head._return_features is False, (
+        "_return_features should be False after switching from ArcFace to CE"
+    )
+    # Criterion should be plain CE
+    assert criterion.cls_loss == "ce"
+    print("[PASS] init_criterion resets _return_features when cls_loss != 'arcface'")
+
+
+# ──────────────────────────────────────── 22. No-args backward compat ─────────
+def test_init_criterion_no_args():
+    """ClassificationModel.init_criterion with no args returns plain CE (full backward compat)."""
+    from ultralytics.nn.modules.head import Classify
+    from ultralytics.nn.tasks import ClassificationModel
+
+    model = ClassificationModel.__new__(ClassificationModel)
+    torch.nn.Module.__init__(model)
+    model.model = torch.nn.ModuleList([Classify(c1=256, c2=5)])
+
+    # No args attribute at all — mimics legacy models
+    criterion = model.init_criterion()
+    assert criterion.cls_loss == "ce"
+    assert criterion._fc_weight is None
+    assert criterion._weight is None
+    assert criterion.label_smoothing == 0.0
+
+    # Head should not have been touched
+    head: Classify = model.model[-1]
+    assert head._return_features is False
+    print("[PASS] init_criterion with no args returns plain CE")
+
+
+# ──────────────────────────────────────── 23. ArcFace eval fallback ───────────
+def test_arcface_eval_fallback_uses_logits():
+    """During eval, ArcFace loss should gracefully fall back to CE on logits."""
+    import torch.nn.functional as F
+
+    nc, feat_dim, bs = 5, 128, 8
+    fc_weight = _make_fc_weight(nc, feat_dim)
+    loss_fn = v8ClassificationLoss(
+        cls_loss="arcface", arcface_margin=0.5, arcface_scale=30.0, fc_weight=fc_weight,
+    )
+
+    # Simulate eval-mode output: (probs, logits)
+    torch.manual_seed(42)
+    logits = torch.randn(bs, nc)
+    probs = logits.softmax(1)
+    preds_eval = (probs, logits)
+    batch = _make_batch([0, 1, 2, 3, 4, 0, 1, 2])
+
+    loss, _ = loss_fn(preds_eval, batch)
+    expected = F.cross_entropy(logits, batch["cls"])
+    assert torch.allclose(loss, expected, atol=1e-5), (
+        f"Eval fallback should be CE on logits: {loss.item():.5f} vs {expected.item():.5f}"
+    )
+    print(f"[PASS] ArcFace eval fallback = CE on logits: {loss.item():.5f}")
+
+
 # ──────────────────────────────────────── run all ─────────────────────────────
 if __name__ == "__main__":
     test_default_ce()
@@ -316,6 +546,14 @@ if __name__ == "__main__":
     test_resolve_class_weights_list()
     test_resolve_class_weights_none()
     test_higher_gamma_reduces_easy_loss()
+    test_arcface_basic()
+    test_arcface_higher_than_ce_equivalent()
+    test_arcface_with_class_weights()
+    test_arcface_zero_margin()
+    test_classify_return_features()
+    test_init_criterion_resets_return_features()
+    test_init_criterion_no_args()
+    test_arcface_eval_fallback_uses_logits()
     print("\n" + "=" * 60)
-    print("All 15 tests passed!")
+    print("All 23 tests passed!")
     print("=" * 60)

@@ -48,10 +48,12 @@ mask_ratio: 4 # (int) mask downsample ratio (segment only)
 
 # Classification
 dropout: 0.0 # (float) dropout for classification head (classify only)
-cls_loss: ce # (str) classification loss type: 'ce' (cross-entropy), 'focal' (focal loss), 'cb_focal' (class-balanced focal loss) (classify only)
+cls_loss: ce # (str) classification loss type: 'ce' | 'focal' | 'cb_focal' | 'arcface' (classify only)
 label_smoothing: 0.0 # (float) label smoothing factor 0.0-1.0 (classify only); combinable with any cls_loss type
 focal_gamma: 2.0 # (float) focal loss gamma focusing parameter (classify only); used when cls_loss is 'focal' or 'cb_focal'
 cb_beta: 0.9999 # (float) class-balanced loss effective number beta 0.0-1.0 (classify only); used when cls_loss is 'cb_focal'
+arcface_margin: 0.5 # (float) ArcFace additive angular margin in radians (classify only); used when cls_loss is 'arcface'
+arcface_scale: 30.0 # (float) ArcFace logit scale factor (classify only); used when cls_loss is 'arcface'
 
 # Val/Test settings ----------------------------------------------------------------------------------------------------
 val: True # (bool) run validation/testing during training

@@ -76,6 +76,8 @@ def train_and_evaluate(
     label_smoothing: float = 0.0,
     focal_gamma: float = 2.0,
     cb_beta: float = 0.9999,
+    arcface_margin: float = 0.5,
+    arcface_scale: float = 30.0,
     epochs: int = 50,
 ) -> dict:
     """Train a classification model and return metrics."""
@@ -83,6 +85,8 @@ def train_and_evaluate(
     print(f"  Training: {run_name}")
     print(f"  cls_loss={cls_loss}, class_weights={class_weights}")
     print(f"  label_smoothing={label_smoothing}, focal_gamma={focal_gamma}, cb_beta={cb_beta}")
+    if cls_loss == "arcface":
+        print(f"  arcface_margin={arcface_margin}, arcface_scale={arcface_scale}")
     print(f"  epochs={epochs}")
     print(f"{'=' * 70}\n")
 
@@ -101,6 +105,8 @@ def train_and_evaluate(
         label_smoothing=label_smoothing,
         focal_gamma=focal_gamma,
         cb_beta=cb_beta,
+        arcface_margin=arcface_margin,
+        arcface_scale=arcface_scale,
     )
     if class_weights is not None:
         kwargs["class_weights"] = class_weights
@@ -211,20 +217,46 @@ def main():
         )
     )
 
+    # 10. ArcFace — default margin=0.5, scale=30
+    results.append(
+        train_and_evaluate(
+            "arcface_m05_s30", data_dir, cls_loss="arcface",
+            arcface_margin=0.5, arcface_scale=30.0, epochs=epochs
+        )
+    )
+
+    # 11. ArcFace — larger margin for stricter separation
+    results.append(
+        train_and_evaluate(
+            "arcface_m10_s30", data_dir, cls_loss="arcface",
+            arcface_margin=1.0, arcface_scale=30.0, epochs=epochs
+        )
+    )
+
+    # 12. ArcFace + class_weights boosting Reject
+    results.append(
+        train_and_evaluate(
+            "arcface_m05_w10", data_dir, cls_loss="arcface",
+            arcface_margin=0.5, arcface_scale=30.0,
+            class_weights={rare_class: 10.0}, epochs=epochs
+        )
+    )
+
     # ── Summary ──
     print("\n" + "=" * 80)
-    print("  CLASSIFICATION LOSS COMPARISON SUMMARY  (50 epochs)")
+    print(f"  CLASSIFICATION LOSS COMPARISON SUMMARY  ({epochs} epochs)")
     print(f"  Dataset: {data_dir}")
     print(f"  Classes: {classes}  |  Train counts: {counts}")
     print(f"  Critical class: '{rare_class}' — boosted with weights 10x / 20x")
     print("=" * 80)
-    print(f"  {'#':<4} {'Run':<25} {'Top-1 Acc':>10} {'Top-5 Acc':>10}")
-    print(f"  {'─' * 4} {'─' * 25} {'─' * 10} {'─' * 10}")
+    print(f"  {'#':<4} {'Run':<28} {'Top-1 Acc':>10} {'Top-5 Acc':>10}")
+    print(f"  {'─' * 4} {'─' * 28} {'─' * 10} {'─' * 10}")
     for i, r in enumerate(results, 1):
-        print(f"  {i:<4} {r['run_name']:<25} {r['top1']:>10.4f} {r['top5']:>10.4f}")
+        print(f"  {i:<4} {r['run_name']:<28} {r['top1']:>10.4f} {r['top5']:>10.4f}")
     print("=" * 80)
-    print("  Runs with higher Reject weight will sacrifice some Approve accuracy")
+    print("  Runs with higher Reject weight sacrifice some Approve accuracy")
     print("  to ensure Reject samples are rarely missed (lower false-negative rate).")
+    print("  ArcFace learns angularly separated embeddings for stronger class boundaries.")
     print("=" * 80)
 
 

@@ -709,13 +709,37 @@ class ClassificationModel(BaseModel):
         args = getattr(self, "args", None)
         if args is None:
             return v8ClassificationLoss()
+
+        cls_loss = getattr(args, "cls_loss", "ce")
+        fc_weight = None
+
+        # ArcFace requires the Classify head to return features (not logits) during training
+        # and needs a reference to the FC layer's weight for angular margin computation.
+        head = self.model[-1]
+        if cls_loss == "arcface":
+            if isinstance(head, Classify):
+                head._return_features = True
+                fc_weight = head.linear.weight  # nn.Parameter (nc, feat_dim)
+            else:
+                LOGGER.warning(
+                    "cls_loss='arcface' requires a Classify head; falling back to 'ce'."
+                )
+                cls_loss = "ce"
+        elif isinstance(head, Classify):
+            # Ensure _return_features is off when not using ArcFace (safety for
+            # models previously trained with ArcFace and reloaded with a different loss).
+            head._return_features = False
+
         return v8ClassificationLoss(
-            cls_loss=getattr(args, "cls_loss", "ce"),
+            cls_loss=cls_loss,
             class_weights=getattr(args, "class_weights_resolved", None),
             class_counts=getattr(args, "class_counts", None),
             label_smoothing=getattr(args, "label_smoothing", 0.0),
             focal_gamma=getattr(args, "focal_gamma", 2.0),
             cb_beta=getattr(args, "cb_beta", 0.9999),
+            arcface_margin=getattr(args, "arcface_margin", 0.5),
+            arcface_scale=getattr(args, "arcface_scale", 30.0),
+            fc_weight=fc_weight,
         )
 
 

@@ -973,17 +973,25 @@ class v8ClassificationLoss:
         - ``'cb_focal'`` – class-balanced focal loss (Cui et al., 2019) that auto-computes
           effective-number-of-samples weights from ``class_counts`` and multiplies them with
           user-defined ``class_weights`` when provided.
+        - ``'arcface'`` – ArcFace (Deng et al., 2019) additive angular margin loss that learns
+          highly discriminative features by enforcing an angular margin between classes in the
+          embedding space. Requires the Classify head to return features and a reference to the
+          FC layer weight (set up automatically by ``ClassificationModel.init_criterion``).
 
     Args:
-        cls_loss (str): Loss type identifier (``'ce'``, ``'focal'``, or ``'cb_focal'``).
+        cls_loss (str): Loss type identifier (``'ce'``, ``'focal'``, ``'cb_focal'``, or ``'arcface'``).
         class_weights (list[float] | None): Per-class importance weights (length = nc).
         class_counts (list[int] | None): Per-class sample counts from training set (length = nc).
         label_smoothing (float): Label-smoothing factor in ``[0, 1]``.
         focal_gamma (float): Focal-loss focusing parameter γ.
         cb_beta (float): Class-balanced effective-number β in ``[0, 1)``.
+        arcface_margin (float): ArcFace additive angular margin *m* in radians.
+        arcface_scale (float): ArcFace logit re-scaling factor *s*.
+        fc_weight (torch.nn.Parameter | None): Reference to the Classify head's ``linear.weight``
+            parameter (shape ``(nc, feat_dim)``). Required when ``cls_loss='arcface'``.
     """
 
-    _VALID_LOSSES = {"ce", "focal", "cb_focal"}
+    _VALID_LOSSES = {"ce", "focal", "cb_focal", "arcface"}
 
     def __init__(
         self,
@@ -993,6 +1001,9 @@ class v8ClassificationLoss:
         label_smoothing: float = 0.0,
         focal_gamma: float = 2.0,
         cb_beta: float = 0.9999,
+        arcface_margin: float = 0.5,
+        arcface_scale: float = 30.0,
+        fc_weight: torch.nn.Parameter | None = None,
     ):
         if cls_loss not in self._VALID_LOSSES:
             raise ValueError(
@@ -1002,6 +1013,11 @@ class v8ClassificationLoss:
         self.label_smoothing = label_smoothing
         self.focal_gamma = focal_gamma
         self.cb_beta = cb_beta
+
+        # ArcFace parameters
+        self.arcface_margin = arcface_margin
+        self.arcface_scale = arcface_scale
+        self._fc_weight = fc_weight  # live reference to nn.Linear.weight (nc, feat_dim)
 
         # --- Build per-class weight tensor ---------------------------------------------------
         # Start from user-defined importance weights (or None)
@@ -1036,8 +1052,21 @@ class v8ClassificationLoss:
     # ---------------------------------------------------------------------- forward
     def __call__(self, preds: Any, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute the classification loss between predictions and true labels."""
-        preds = preds[1] if isinstance(preds, (list, tuple)) else preds
         targets = batch["cls"]
+
+        if self.cls_loss == "arcface":
+            if isinstance(preds, (list, tuple)):
+                # Eval mode: Classify head returns (probs, logits).
+                # Use standard CE on logits for the validation loss tracker.
+                logits = preds[1]
+                weight = self._ensure_weight_device(logits.device)
+                loss = F.cross_entropy(logits, targets, weight=weight, reduction="mean")
+                return loss, loss.detach()
+            # Training mode: Classify head returns raw features (B, D).
+            return self._arcface_loss(preds, targets)
+
+        # For all other losses, preds is logits (training) or (probs, logits) (inference)
+        preds = preds[1] if isinstance(preds, (list, tuple)) else preds
         weight = self._ensure_weight_device(preds.device)
 
         if self.cls_loss == "ce":
@@ -1086,6 +1115,50 @@ class v8ClassificationLoss:
             loss = loss * class_w
 
         return loss.mean()
+
+    # ---------------------------------------------------------------------- ArcFace loss
+    def _arcface_loss(self, features: torch.Tensor, targets: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """ArcFace additive angular margin loss (Deng et al., 2019).
+
+        Computes: L = CE(s * (cos(θ + m) for target, cos(θ) for others), targets)
+        where θ is the angle between L2-normalised features and L2-normalised class weights,
+        m is the angular margin, and s is the scale factor.
+
+        Args:
+            features: Raw features from the Classify head, shape (B, D).
+            targets: Ground-truth class indices, shape (B,).
+
+        Returns:
+            Tuple of (loss, loss_detached).
+        """
+        assert self._fc_weight is not None, "ArcFace loss requires fc_weight (set via init_criterion)."
+
+        # L2-normalise features and weight vectors
+        feat_norm = F.normalize(features, dim=1)  # (B, D)
+        w_norm = F.normalize(self._fc_weight, dim=1)  # (nc, D)
+
+        # Cosine similarity → cos(θ)
+        cos_theta = feat_norm @ w_norm.T  # (B, nc)
+        cos_theta = cos_theta.clamp(-1.0 + 1e-7, 1.0 - 1e-7)  # numerical stability for acos
+
+        # Angle θ
+        theta = torch.acos(cos_theta)  # (B, nc)
+
+        # Add margin to the target class: cos(θ_y + m)
+        nc = cos_theta.shape[1]
+        one_hot = F.one_hot(targets, num_classes=nc).float()  # (B, nc)
+        arcface_logits = torch.cos(theta + self.arcface_margin * one_hot)  # (B, nc)
+
+        # Re-scale
+        arcface_logits = self.arcface_scale * arcface_logits  # (B, nc)
+
+        # Apply per-class importance weights if provided
+        weight = self._ensure_weight_device(features.device)
+
+        loss = F.cross_entropy(
+            arcface_logits, targets, weight=weight, reduction="mean", label_smoothing=self.label_smoothing
+        )
+        return loss, loss.detach()
 
 
 class v8OBBLoss(v8DetectionLoss):

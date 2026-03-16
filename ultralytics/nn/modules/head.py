@@ -781,6 +781,7 @@ class Classify(nn.Module):
         pool (nn.AdaptiveAvgPool2d): Global average pooling layer.
         drop (nn.Dropout): Dropout layer for regularization.
         linear (nn.Linear): Linear layer for final classification.
+        _return_features (bool): When True (ArcFace mode), return raw features instead of logits during training.
 
     Methods:
         forward: Perform forward pass of the YOLO model on input image data.
@@ -793,6 +794,7 @@ class Classify(nn.Module):
     """
 
     export = False  # export mode
+    _return_features = False  # set True for ArcFace (loss computes its own angular logits)
 
     def __init__(self, c1: int, c2: int, k: int = 1, s: int = 1, p: int | None = None, g: int = 1):
         """Initialize YOLO classification head to transform input tensor from (b,c1,20,20) to (b,c2) shape.
@@ -816,7 +818,10 @@ class Classify(nn.Module):
         """Perform forward pass of the YOLO model on input image data."""
         if isinstance(x, list):
             x = torch.cat(x, 1)
-        x = self.linear(self.drop(self.pool(self.conv(x)).flatten(1)))
+        features = self.drop(self.pool(self.conv(x)).flatten(1))  # (b, c_)
+        if self.training and self._return_features:
+            return features  # ArcFace mode: loss will compute angular logits from features + weight
+        x = self.linear(features)  # (b, c2)
         if self.training:
             return x
         y = x.softmax(1)  # get final output
