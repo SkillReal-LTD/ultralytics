@@ -964,13 +964,128 @@ class PoseLoss26(v8PoseLoss):
 
 
 class v8ClassificationLoss:
-    """Criterion class for computing training losses for classification."""
+    """Criterion class for computing training losses for classification.
 
+    Supports multiple loss types selectable via ``cls_loss``:
+        - ``'ce'`` – standard (optionally weighted) cross-entropy with optional label smoothing.
+        - ``'focal'`` – focal loss that down-weights easy examples; optionally combined with
+          user-defined ``class_weights``.
+        - ``'cb_focal'`` – class-balanced focal loss (Cui et al., 2019) that auto-computes
+          effective-number-of-samples weights from ``class_counts`` and multiplies them with
+          user-defined ``class_weights`` when provided.
+
+    Args:
+        cls_loss (str): Loss type identifier (``'ce'``, ``'focal'``, or ``'cb_focal'``).
+        class_weights (list[float] | None): Per-class importance weights (length = nc).
+        class_counts (list[int] | None): Per-class sample counts from training set (length = nc).
+        label_smoothing (float): Label-smoothing factor in ``[0, 1]``.
+        focal_gamma (float): Focal-loss focusing parameter γ.
+        cb_beta (float): Class-balanced effective-number β in ``[0, 1)``.
+    """
+
+    _VALID_LOSSES = {"ce", "focal", "cb_focal"}
+
+    def __init__(
+        self,
+        cls_loss: str = "ce",
+        class_weights: list[float] | None = None,
+        class_counts: list[int] | None = None,
+        label_smoothing: float = 0.0,
+        focal_gamma: float = 2.0,
+        cb_beta: float = 0.9999,
+    ):
+        if cls_loss not in self._VALID_LOSSES:
+            raise ValueError(
+                f"Invalid cls_loss='{cls_loss}'. Must be one of {sorted(self._VALID_LOSSES)}."
+            )
+        self.cls_loss = cls_loss
+        self.label_smoothing = label_smoothing
+        self.focal_gamma = focal_gamma
+        self.cb_beta = cb_beta
+
+        # --- Build per-class weight tensor ---------------------------------------------------
+        # Start from user-defined importance weights (or None)
+        self._weight: torch.Tensor | None = None
+        importance = torch.tensor(class_weights, dtype=torch.float32) if class_weights is not None else None
+
+        if cls_loss == "cb_focal" and class_counts is not None:
+            # Effective-number weighting: w_c = (1 - β) / (1 - β^n_c)
+            counts = torch.tensor(class_counts, dtype=torch.float32)
+            effective_num = 1.0 - self.cb_beta ** counts
+            cb_weights = (1.0 - self.cb_beta) / effective_num
+            cb_weights = cb_weights / cb_weights.sum() * len(cb_weights)  # normalise so mean ≈ 1
+            if importance is not None:
+                cb_weights = cb_weights * importance  # combine with user importance
+            self._weight = cb_weights
+        elif importance is not None:
+            self._weight = importance
+
+        # Cache device placement flag
+        self._weight_device: torch.device | None = None
+
+    # ---------------------------------------------------------------------- helpers
+    def _ensure_weight_device(self, device: torch.device) -> torch.Tensor | None:
+        """Move the weight tensor to the correct device (once)."""
+        if self._weight is None:
+            return None
+        if self._weight_device != device:
+            self._weight = self._weight.to(device)
+            self._weight_device = device
+        return self._weight
+
+    # ---------------------------------------------------------------------- forward
     def __call__(self, preds: Any, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute the classification loss between predictions and true labels."""
         preds = preds[1] if isinstance(preds, (list, tuple)) else preds
-        loss = F.cross_entropy(preds, batch["cls"], reduction="mean")
+        targets = batch["cls"]
+        weight = self._ensure_weight_device(preds.device)
+
+        if self.cls_loss == "ce":
+            loss = F.cross_entropy(
+                preds, targets, weight=weight, reduction="mean", label_smoothing=self.label_smoothing
+            )
+        elif self.cls_loss in ("focal", "cb_focal"):
+            loss = self._focal_loss(preds, targets, weight)
+        else:
+            # Fallback – should not happen due to __init__ validation
+            loss = F.cross_entropy(preds, targets, reduction="mean")
+
         return loss, loss.detach()
+
+    # ---------------------------------------------------------------------- focal loss
+    def _focal_loss(
+        self, preds: torch.Tensor, targets: torch.Tensor, weight: torch.Tensor | None
+    ) -> torch.Tensor:
+        """Multi-class focal loss with optional per-class weights and label smoothing.
+
+        Implements: FL(p_t) = -α_t * (1 - p_t)^γ * log(p_t)
+        where p_t is the model's estimated probability for the correct class.
+        """
+        nc = preds.shape[1]
+        # Softmax probabilities
+        log_probs = F.log_softmax(preds, dim=1)  # (B, C)
+        probs = log_probs.exp()  # (B, C)
+
+        # One-hot with optional label smoothing
+        if self.label_smoothing > 0:
+            one_hot = torch.full_like(probs, self.label_smoothing / (nc - 1))
+            one_hot.scatter_(1, targets.unsqueeze(1), 1.0 - self.label_smoothing)
+        else:
+            one_hot = torch.zeros_like(probs)
+            one_hot.scatter_(1, targets.unsqueeze(1), 1.0)
+
+        # Focal modulating factor: (1 - p_t)^gamma applied per-class
+        focal_weight = (1.0 - probs).pow(self.focal_gamma)  # (B, C)
+
+        # Per-sample focal cross-entropy: sum over classes of -α * (1-p)^γ * y * log(p)
+        loss = -(focal_weight * one_hot * log_probs).sum(dim=1)  # (B,)
+
+        # Apply per-class weight via the target class
+        if weight is not None:
+            class_w = weight[targets]  # (B,)
+            loss = loss * class_w
+
+        return loss.mean()
 
 
 class v8OBBLoss(v8DetectionLoss):

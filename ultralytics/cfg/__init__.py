@@ -159,6 +159,7 @@ CFG_FLOAT_KEYS = frozenset(
         "time",
         "workspace",
         "batch",
+        "focal_gamma",
     }
 )
 CFG_FRACTION_KEYS = frozenset(
@@ -187,6 +188,8 @@ CFG_FRACTION_KEYS = frozenset(
         "iou",
         "fraction",
         "multi_scale",
+        "label_smoothing",
+        "cb_beta",
     }
 )
 CFG_INT_KEYS = frozenset(
@@ -493,7 +496,7 @@ def check_dict_alignment(
     base_keys, custom_keys = (frozenset(x.keys()) for x in (base, custom))
     # Allow 'augmentations' as a valid custom parameter for custom Albumentations transforms
     if allowed_custom_keys is None:
-        allowed_custom_keys = {"augmentations", "save_dir", "class_weights_resolved"}
+        allowed_custom_keys = {"augmentations", "save_dir", "class_weights_resolved", "class_counts"}
     if mismatched := [k for k in custom_keys if k not in base_keys and k not in allowed_custom_keys]:
         from difflib import get_close_matches
 

@@ -706,7 +706,17 @@ class ClassificationModel(BaseModel):
 
     def init_criterion(self):
         """Initialize the loss criterion for the ClassificationModel."""
-        return v8ClassificationLoss()
+        args = getattr(self, "args", None)
+        if args is None:
+            return v8ClassificationLoss()
+        return v8ClassificationLoss(
+            cls_loss=getattr(args, "cls_loss", "ce"),
+            class_weights=getattr(args, "class_weights_resolved", None),
+            class_counts=getattr(args, "class_counts", None),
+            label_smoothing=getattr(args, "label_smoothing", 0.0),
+            focal_gamma=getattr(args, "focal_gamma", 2.0),
+            cb_beta=getattr(args, "cb_beta", 0.9999),
+        )
 
 
 class RTDETRDetectionModel(DetectionModel):
