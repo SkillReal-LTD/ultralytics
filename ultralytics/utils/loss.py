@@ -1039,7 +1039,7 @@ class v8ClassificationLoss:
             if present_mask.any():
                 effective_num = 1.0 - self.cb_beta ** counts[present_mask]
                 w = (1.0 - self.cb_beta) / effective_num
-                w = w / w.sum() * present_mask.sum().float()  # normalise over present classes (mean ≈ 1)
+                w = w / w.sum() * present_mask.sum().float()  # normalize over present classes (mean ≈ 1)
                 cb_weights[present_mask] = w
 
             if importance is not None:

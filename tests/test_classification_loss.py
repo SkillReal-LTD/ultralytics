@@ -525,7 +525,7 @@ def test_arcface_eval_fallback_uses_logits():
 
 # ──────────────────────────────────────── 24. cb_beta=1.0 clamped ─────────────
 def test_cb_beta_one_clamped():
-    """cb_beta >= 1.0 should be clamped to 0.9999 to avoid division by zero."""
+    """Cb_beta >= 1.0 should be clamped to 0.9999 to avoid division by zero."""
     counts = [100, 50, 10]
     # Should not raise — beta is silently clamped
     loss_fn = v8ClassificationLoss(cls_loss="cb_focal", class_counts=counts, cb_beta=1.0)
@@ -544,9 +544,7 @@ def test_cb_focal_zero_count_classes():
     assert torch.isfinite(loss_fn._weight).all(), f"Weights contain NaN/Inf: {loss_fn._weight}"
 
     # Zero-count class must have weight 0 (ignored), not an inflated weight
-    assert loss_fn._weight[1].item() == 0.0, (
-        f"Zero-count class should have weight 0, got {loss_fn._weight[1].item()}"
-    )
+    assert loss_fn._weight[1].item() == 0.0, f"Zero-count class should have weight 0, got {loss_fn._weight[1].item()}"
     # Non-zero classes should have positive weight
     assert loss_fn._weight[0].item() > 0
     assert loss_fn._weight[2].item() > 0
@@ -566,10 +564,9 @@ def test_cb_focal_zero_count_classes():
 def test_cb_focal_zero_count_no_normalization_distortion():
     """Absent classes (count=0) must not inflate the denominator during normalization.
 
-    If zero-count classes were floored to 1 instead of being zeroed out, they would
-    receive the highest CB-weight (rarest class), inflating the normalization sum and
-    dragging down the weights of all real classes.  This test verifies that the weights
-    for present classes are identical whether or not absent classes exist.
+    If zero-count classes were floored to 1 instead of being zeroed out, they would receive the highest CB-weight
+    (rarest class), inflating the normalization sum and dragging down the weights of all real classes. This test
+    verifies that the weights for present classes are identical whether or not absent classes exist.
     """
     beta = 0.999
 
@@ -595,10 +592,7 @@ def test_cb_focal_zero_count_no_normalization_distortion():
         f"Class 1/2 weight distorted: no_absent={w_a[1].item():.6f} vs with_absent={w_b[2].item():.6f}"
     )
 
-    print(
-        f"[PASS] Zero-count does NOT distort normalization: "
-        f"no_absent={w_a.tolist()}, with_absent={w_b.tolist()}"
-    )
+    print(f"[PASS] Zero-count does NOT distort normalization: no_absent={w_a.tolist()}, with_absent={w_b.tolist()}")
 
 
 # ──────────────────────────────────────── run all ─────────────────────────────
