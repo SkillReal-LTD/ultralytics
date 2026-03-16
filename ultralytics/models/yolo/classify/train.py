@@ -128,6 +128,15 @@ class ClassificationTrainer(BaseTrainer):
             if cls_idx < nc:
                 counts[cls_idx] += 1
 
+        # Warn about zero-count classes.  Their CB-Focal weight will be set to 0
+        # (ignored) by v8ClassificationLoss so they don't distort other weights.
+        zero_classes = [self.data["names"][i] for i, c in enumerate(counts) if c == 0]
+        if zero_classes:
+            LOGGER.warning(
+                f"cls_loss='cb_focal': classes {zero_classes} have 0 training samples; "
+                "their CB-Focal weight will be set to 0 (ignored in loss)."
+            )
+
         self.args.class_counts = counts
         LOGGER.info(
             f"Classification class counts (train): {dict(zip(self.data['names'].values(), counts))}"

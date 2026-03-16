@@ -9,6 +9,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from ultralytics.utils import LOGGER
 from ultralytics.utils.metrics import OKS_SIGMA, RLE_WEIGHT
 from ultralytics.utils.ops import crop_mask, xywh2xyxy, xyxy2xywh
 from ultralytics.utils.tal import RotatedTaskAlignedAssigner, TaskAlignedAssigner, dist2bbox, dist2rbox, make_anchors
@@ -1012,6 +1013,11 @@ class v8ClassificationLoss:
         self.cls_loss = cls_loss
         self.label_smoothing = label_smoothing
         self.focal_gamma = focal_gamma
+
+        # cb_beta must be in [0, 1); beta=1.0 makes effective_num = 0 → division by zero.
+        if cb_beta >= 1.0:
+            LOGGER.warning(f"cb_beta={cb_beta} >= 1.0 causes division by zero; clamping to 0.9999.")
+            cb_beta = 0.9999
         self.cb_beta = cb_beta
 
         # ArcFace parameters
@@ -1027,9 +1033,17 @@ class v8ClassificationLoss:
         if cls_loss == "cb_focal" and class_counts is not None:
             # Effective-number weighting: w_c = (1 - β) / (1 - β^n_c)
             counts = torch.tensor(class_counts, dtype=torch.float32)
-            effective_num = 1.0 - self.cb_beta ** counts
-            cb_weights = (1.0 - self.cb_beta) / effective_num
-            cb_weights = cb_weights / cb_weights.sum() * len(cb_weights)  # normalise so mean ≈ 1
+            present_mask = counts > 0  # classes with training samples
+
+            # Compute CB weights only for present classes to avoid division by zero
+            # (β^0 = 1 → effective_num = 0).  Absent classes get weight 0.
+            cb_weights = torch.zeros_like(counts)
+            if present_mask.any():
+                effective_num = 1.0 - self.cb_beta ** counts[present_mask]
+                w = (1.0 - self.cb_beta) / effective_num
+                w = w / w.sum() * present_mask.sum().float()  # normalise over present classes (mean ≈ 1)
+                cb_weights[present_mask] = w
+
             if importance is not None:
                 cb_weights = cb_weights * importance  # combine with user importance
             self._weight = cb_weights
