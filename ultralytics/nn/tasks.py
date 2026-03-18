@@ -720,7 +720,7 @@ class ClassificationModel(BaseModel):
             if isinstance(head, Classify):
                 head._return_features = True
                 fc_weight = head.linear.weight  # nn.Parameter (nc, feat_dim)
-                # ArcFace operates in angular (normalised) space — the bias is not
+                # ArcFace operates in angular (normalized) space — the bias is not
                 # used during the forward pass (features are returned directly).
                 # Freeze the bias so it doesn't accumulate stale gradients and to
                 # keep parameter management explicit (consistent with the original
