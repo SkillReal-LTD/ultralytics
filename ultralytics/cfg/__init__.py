@@ -159,6 +159,9 @@ CFG_FLOAT_KEYS = frozenset(
         "time",
         "workspace",
         "batch",
+        "focal_gamma",
+        "arcface_margin",
+        "arcface_scale",
     }
 )
 CFG_FRACTION_KEYS = frozenset(
@@ -187,6 +190,8 @@ CFG_FRACTION_KEYS = frozenset(
         "iou",
         "fraction",
         "multi_scale",
+        "label_smoothing",
+        "cb_beta",
     }
 )
 CFG_INT_KEYS = frozenset(
@@ -444,7 +449,7 @@ def _handle_deprecation(custom: dict) -> dict:
         "hide_conf": ("show_conf", lambda v: not bool(v)),
         "line_thickness": ("line_width", lambda v: v),
     }
-    removed_keys = {"label_smoothing", "save_hybrid", "crop_fraction"}
+    removed_keys = {"save_hybrid", "crop_fraction"}
 
     for old_key, (new_key, transform) in deprecated_mappings.items():
         if old_key not in custom:
@@ -493,7 +498,7 @@ def check_dict_alignment(
     base_keys, custom_keys = (frozenset(x.keys()) for x in (base, custom))
     # Allow 'augmentations' as a valid custom parameter for custom Albumentations transforms
     if allowed_custom_keys is None:
-        allowed_custom_keys = {"augmentations", "save_dir", "class_weights_resolved"}
+        allowed_custom_keys = {"augmentations", "save_dir"}
     if mismatched := [k for k in custom_keys if k not in base_keys and k not in allowed_custom_keys]:
         from difflib import get_close_matches
 

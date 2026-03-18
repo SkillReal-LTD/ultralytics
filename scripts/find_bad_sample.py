@@ -1,22 +1,23 @@
 """Script to find problematic samples in GPU 3's partition."""
 
-import sys
 import signal
 from pathlib import Path
+
 
 # Timeout handler
 class TimeoutError(Exception):
     pass
 
+
 def timeout_handler(signum, frame):
     raise TimeoutError("Sample loading timed out!")
+
 
 # Set up signal handler for timeout
 signal.signal(signal.SIGALRM, timeout_handler)
 
 
 def test_samples():
-    from ultralytics import YOLO
     from ultralytics.data import YOLODataset
     from ultralytics.data.utils import check_det_dataset
 
@@ -57,7 +58,7 @@ def test_samples():
     start_idx = 4320
     end_idx = min(5737, len(dataset))
 
-    print(f"Testing samples {start_idx} to {end_idx-1} (GPU 3's partition)")
+    print(f"Testing samples {start_idx} to {end_idx - 1} (GPU 3's partition)")
     print("=" * 60)
 
     bad_samples = []
@@ -68,7 +69,7 @@ def test_samples():
             signal.alarm(10)
 
             # Try to load the sample
-            sample = dataset[idx]
+            dataset[idx]
 
             # Cancel alarm
             signal.alarm(0)

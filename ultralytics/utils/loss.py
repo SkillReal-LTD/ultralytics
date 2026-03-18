@@ -9,10 +9,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from ultralytics.utils import LOGGER
 from ultralytics.utils.metrics import OKS_SIGMA, RLE_WEIGHT
 from ultralytics.utils.ops import crop_mask, xywh2xyxy, xyxy2xywh
 from ultralytics.utils.tal import RotatedTaskAlignedAssigner, TaskAlignedAssigner, dist2bbox, dist2rbox, make_anchors
-from ultralytics.utils.torch_utils import autocast
+from ultralytics.utils.torch_utils import TORCH_1_10, autocast
 
 from .metrics import bbox_iou, probiou
 from .tal import bbox2dist, rbox2dist
@@ -964,12 +965,239 @@ class PoseLoss26(v8PoseLoss):
 
 
 class v8ClassificationLoss:
-    """Criterion class for computing training losses for classification."""
+    """Criterion class for computing training losses for classification.
 
+    Supports multiple loss types selectable via ``cls_loss``:
+        - ``'ce'`` – standard (optionally weighted) cross-entropy with optional label smoothing.
+        - ``'focal'`` – focal loss that down-weights easy examples; optionally combined with
+          user-defined ``class_weights``.
+        - ``'cb_focal'`` – class-balanced focal loss (Cui et al., 2019) that auto-computes
+          effective-number-of-samples weights from ``class_counts`` and multiplies them with
+          user-defined ``class_weights`` when provided.
+        - ``'arcface'`` – ArcFace (Deng et al., 2019) additive angular margin loss that learns
+          highly discriminative features by enforcing an angular margin between classes in the
+          embedding space. Requires the Classify head to return features and a reference to the
+          FC layer weight (set up automatically by ``ClassificationModel.init_criterion``).
+
+    Args:
+        cls_loss (str): Loss type identifier (``'ce'``, ``'focal'``, ``'cb_focal'``, or ``'arcface'``).
+        class_weights (list[float] | None): Per-class importance weights (length = nc).
+        class_counts (list[int] | None): Per-class sample counts from training set (length = nc).
+        label_smoothing (float): Label-smoothing factor in ``[0, 1]``.
+        focal_gamma (float): Focal-loss focusing parameter γ.
+        cb_beta (float): Class-balanced effective-number β in ``[0, 1)``.
+        arcface_margin (float): ArcFace additive angular margin *m* in radians.
+        arcface_scale (float): ArcFace logit re-scaling factor *s*.
+        fc_weight (torch.nn.Parameter | None): Reference to the Classify head's ``linear.weight`` parameter (shape
+            ``(nc, feat_dim)``). Required when ``cls_loss='arcface'``.
+    """
+
+    _VALID_LOSSES = {"ce", "focal", "cb_focal", "arcface"}
+
+    def __init__(
+        self,
+        cls_loss: str = "ce",
+        class_weights: list[float] | None = None,
+        class_counts: list[int] | None = None,
+        label_smoothing: float = 0.0,
+        focal_gamma: float = 2.0,
+        cb_beta: float = 0.9999,
+        arcface_margin: float = 0.5,
+        arcface_scale: float = 30.0,
+        fc_weight: torch.nn.Parameter | None = None,
+    ):
+        if cls_loss not in self._VALID_LOSSES:
+            raise ValueError(f"Invalid cls_loss='{cls_loss}'. Must be one of {sorted(self._VALID_LOSSES)}.")
+        self.cls_loss = cls_loss
+        self.label_smoothing = label_smoothing
+        self.focal_gamma = focal_gamma
+
+        # cb_beta must be in [0, 1); beta=1.0 makes effective_num = 0 → division by zero.
+        if cb_beta >= 1.0:
+            LOGGER.warning(f"cb_beta={cb_beta} >= 1.0 causes division by zero; clamping to 0.9999.")
+            cb_beta = 0.9999
+        self.cb_beta = cb_beta
+
+        # ArcFace parameters
+        self.arcface_margin = arcface_margin
+        self.arcface_scale = arcface_scale
+        self._fc_weight = fc_weight  # live reference to nn.Linear.weight (nc, feat_dim)
+
+        # --- Build per-class weight tensor ---------------------------------------------------
+        # Start from user-defined importance weights (or None)
+        self._weight: torch.Tensor | None = None
+        importance = torch.tensor(class_weights, dtype=torch.float32) if class_weights is not None else None
+
+        if cls_loss == "cb_focal" and class_counts is not None:
+            # Effective-number weighting: w_c = (1 - β) / (1 - β^n_c)
+            counts = torch.tensor(class_counts, dtype=torch.float32)
+            present_mask = counts > 0  # classes with training samples
+
+            # Compute CB weights only for present classes to avoid division by zero
+            # (β^0 = 1 → effective_num = 0).  Absent classes get weight 0.
+            cb_weights = torch.zeros_like(counts)
+            if present_mask.any():
+                effective_num = 1.0 - self.cb_beta ** counts[present_mask]
+                w = (1.0 - self.cb_beta) / effective_num
+                w = w / w.sum() * present_mask.sum().float()  # normalize over present classes (mean ≈ 1)
+                cb_weights[present_mask] = w
+
+            if importance is not None:
+                cb_weights = cb_weights * importance  # combine with user importance
+            self._weight = cb_weights
+        elif importance is not None:
+            self._weight = importance
+
+        # Cache device placement flag
+        self._weight_device: torch.device | None = None
+
+    # ---------------------------------------------------------------------- helpers
+    def _ensure_weight_device(self, device: torch.device) -> torch.Tensor | None:
+        """Move the weight tensor to the correct device (once)."""
+        if self._weight is None:
+            return None
+        if self._weight_device != device:
+            self._weight = self._weight.to(device)
+            self._weight_device = device
+        return self._weight
+
+    def _cross_entropy_with_smoothing(
+        self,
+        logits: torch.Tensor,
+        targets: torch.Tensor,
+        weight: torch.Tensor | None,
+    ) -> torch.Tensor:
+        """Cross-entropy with label smoothing, compatible with torch < 1.10.
+
+        ``F.cross_entropy(label_smoothing=...)`` was added in PyTorch 1.10.  On older
+        versions we fall back to a manual implementation so the library stays compatible
+        with the declared ``torch>=1.8`` minimum.
+        """
+        if self.label_smoothing == 0.0:
+            return F.cross_entropy(logits, targets, weight=weight, reduction="mean")
+
+        if TORCH_1_10:
+            return F.cross_entropy(
+                logits, targets, weight=weight, reduction="mean", label_smoothing=self.label_smoothing
+            )
+
+        # Manual label-smoothing for torch < 1.10
+        # Matches PyTorch semantics: target = (1 - ε) * one_hot + ε / C
+        #   correct class  → (1 - ε) + ε/C
+        #   other classes   → ε/C
+        nc = logits.shape[1]
+        log_probs = F.log_softmax(logits, dim=1)  # (B, C)
+        smooth = torch.full_like(log_probs, self.label_smoothing / nc)
+        smooth.scatter_(1, targets.unsqueeze(1), 1.0 - self.label_smoothing + self.label_smoothing / nc)
+        # Per-sample loss
+        loss = -(smooth * log_probs).sum(dim=1)  # (B,)
+        if weight is not None:
+            loss = loss * weight[targets]
+        return loss.mean()
+
+    # ---------------------------------------------------------------------- forward
     def __call__(self, preds: Any, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute the classification loss between predictions and true labels."""
+        targets = batch["cls"]
+
+        if self.cls_loss == "arcface":
+            if isinstance(preds, (list, tuple)):
+                # Eval mode: Classify head returns (probs, logits).
+                # Use standard CE on logits for the validation loss tracker.
+                logits = preds[1]
+                weight = self._ensure_weight_device(logits.device)
+                loss = F.cross_entropy(logits, targets, weight=weight, reduction="mean")
+                return loss, loss.detach()
+            # Training mode: Classify head returns raw features (B, D).
+            return self._arcface_loss(preds, targets)
+
+        # For all other losses, preds is logits (training) or (probs, logits) (inference)
         preds = preds[1] if isinstance(preds, (list, tuple)) else preds
-        loss = F.cross_entropy(preds, batch["cls"], reduction="mean")
+        weight = self._ensure_weight_device(preds.device)
+
+        if self.cls_loss == "ce":
+            loss = self._cross_entropy_with_smoothing(preds, targets, weight)
+        elif self.cls_loss in ("focal", "cb_focal"):
+            loss = self._focal_loss(preds, targets, weight)
+        else:
+            # Fallback – should not happen due to __init__ validation
+            loss = F.cross_entropy(preds, targets, reduction="mean")
+
+        return loss, loss.detach()
+
+    # ---------------------------------------------------------------------- focal loss
+    def _focal_loss(self, preds: torch.Tensor, targets: torch.Tensor, weight: torch.Tensor | None) -> torch.Tensor:
+        """Multi-class focal loss with optional per-class weights and label smoothing.
+
+        Implements: FL(p_t) = -α_t * (1 - p_t)^γ * log(p_t)
+        where p_t is the model's estimated probability for the correct class.
+        """
+        nc = preds.shape[1]
+        # Softmax probabilities
+        log_probs = F.log_softmax(preds, dim=1)  # (B, C)
+        probs = log_probs.exp()  # (B, C)
+
+        # One-hot with optional label smoothing (PyTorch semantics: ε/C everywhere, 1-ε+ε/C on target)
+        if self.label_smoothing > 0:
+            one_hot = torch.full_like(probs, self.label_smoothing / nc)
+            one_hot.scatter_(1, targets.unsqueeze(1), 1.0 - self.label_smoothing + self.label_smoothing / nc)
+        else:
+            one_hot = torch.zeros_like(probs)
+            one_hot.scatter_(1, targets.unsqueeze(1), 1.0)
+
+        # Focal modulating factor: (1 - p_t)^gamma applied per-class
+        focal_weight = (1.0 - probs).pow(self.focal_gamma)  # (B, C)
+
+        # Per-sample focal cross-entropy: sum over classes of -α * (1-p)^γ * y * log(p)
+        loss = -(focal_weight * one_hot * log_probs).sum(dim=1)  # (B,)
+
+        # Apply per-class weight via the target class
+        if weight is not None:
+            class_w = weight[targets]  # (B,)
+            loss = loss * class_w
+
+        return loss.mean()
+
+    # ---------------------------------------------------------------------- ArcFace loss
+    def _arcface_loss(self, features: torch.Tensor, targets: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """ArcFace additive angular margin loss (Deng et al., 2019).
+
+        Computes: L = CE(s * (cos(θ + m) for target, cos(θ) for others), targets)
+        where θ is the angle between L2-normalised features and L2-normalised class weights,
+        m is the angular margin, and s is the scale factor.
+
+        Args:
+            features: Raw features from the Classify head, shape (B, D).
+            targets: Ground-truth class indices, shape (B,).
+
+        Returns:
+            Tuple of (loss, loss_detached).
+        """
+        assert self._fc_weight is not None, "ArcFace loss requires fc_weight (set via init_criterion)."
+
+        # L2-normalise features and weight vectors
+        feat_norm = F.normalize(features, dim=1)  # (B, D)
+        w_norm = F.normalize(self._fc_weight, dim=1)  # (nc, D)
+
+        # Cosine similarity → cos(θ)
+        cos_theta = feat_norm @ w_norm.T  # (B, nc)
+        cos_theta = cos_theta.clamp(-1.0 + 1e-7, 1.0 - 1e-7)  # numerical stability for acos
+
+        # Angle θ
+        theta = torch.acos(cos_theta)  # (B, nc)
+
+        # Add margin to the target class: cos(θ_y + m)
+        nc = cos_theta.shape[1]
+        one_hot = F.one_hot(targets, num_classes=nc).float()  # (B, nc)
+        arcface_logits = torch.cos(theta + self.arcface_margin * one_hot)  # (B, nc)
+
+        # Re-scale
+        arcface_logits = self.arcface_scale * arcface_logits  # (B, nc)
+
+        # Apply per-class importance weights if provided
+        weight = self._ensure_weight_device(features.device)
+
+        loss = self._cross_entropy_with_smoothing(arcface_logits, targets, weight)
         return loss, loss.detach()
 
 

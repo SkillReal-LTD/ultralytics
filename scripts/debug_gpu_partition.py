@@ -42,7 +42,7 @@ def main():
 
     for rank in range(num_gpus):
         start_idx, end_idx = get_rank_indices(total_images, per_gpu_batch, num_gpus, rank)
-        print(f"GPU {rank} (rank {rank}): samples {start_idx} to {end_idx-1} ({end_idx - start_idx} samples)")
+        print(f"GPU {rank} (rank {rank}): samples {start_idx} to {end_idx - 1} ({end_idx - start_idx} samples)")
 
     print()
     print("=" * 60)
@@ -52,7 +52,7 @@ def main():
 
     # Show the specific range for GPU 3
     start_idx, end_idx = get_rank_indices(total_images, per_gpu_batch, num_gpus, 3)
-    print(f"Check images at indices {start_idx} to {end_idx-1} for corruption or issues.")
+    print(f"Check images at indices {start_idx} to {end_idx - 1} for corruption or issues.")
     print()
 
     # Also show first few indices that GPU 3 will try to load

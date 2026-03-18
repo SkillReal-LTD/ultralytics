@@ -65,8 +65,80 @@ class ClassificationTrainer(BaseTrainer):
         super().__init__(cfg, overrides, _callbacks)
 
     def set_model_attributes(self):
-        """Set the YOLO model's class names from the loaded dataset."""
+        """Set the YOLO model's class names and classification loss config from the loaded dataset."""
         self.model.names = self.data["names"]
+        self.model.args = self.args  # attach hyperparameters so init_criterion() can read them
+
+        # Resolve class_weights (same logic as DetectionTrainer)
+        self._resolve_class_weights()
+
+        # Compute per-class sample counts from training set for class-balanced losses
+        self._compute_class_counts()
+
+    def _resolve_class_weights(self):
+        """Resolve class_weights config into a list of floats indexed by class ID.
+
+        Accepts either a dict mapping class names to weights or a list of floats (one per class).
+        Classes not specified in a dict default to weight 1.0.
+        """
+        raw = getattr(self.args, "class_weights", None)
+        nc = self.data["nc"]
+        names = self.data["names"]  # {0: 'cat', 1: 'dog', ...}
+
+        if not raw:
+            self.args.class_weights_resolved = None
+            return
+
+        resolved = [1.0] * nc
+        if isinstance(raw, dict):
+            name_to_idx = {v: k for k, v in names.items()}
+            for name, weight in raw.items():
+                if name in name_to_idx:
+                    resolved[name_to_idx[name]] = float(weight)
+                else:
+                    LOGGER.warning(f"class_weights: class '{name}' not found in dataset names, ignoring.")
+        elif isinstance(raw, (list, tuple)):
+            if len(raw) != nc:
+                raise ValueError(f"class_weights list length ({len(raw)}) != number of classes ({nc}).")
+            resolved = [float(w) for w in raw]
+        else:
+            raise TypeError(f"Unsupported class_weights type: {type(raw)}. Expected dict or list.")
+
+        self.args.class_weights_resolved = resolved
+        LOGGER.info(f"Classification class weights resolved: {dict(zip(names.values(), resolved))}")
+
+    def _compute_class_counts(self):
+        """Count training samples per class and store in args for class-balanced loss."""
+        if getattr(self.args, "cls_loss", "ce") != "cb_focal":
+            self.args.class_counts = None
+            return
+
+        nc = self.data["nc"]
+        counts = [0] * nc
+        train_path = self.data.get("train")
+        if train_path is None:
+            LOGGER.warning("cls_loss='cb_focal' but no training path found; falling back to uniform weights.")
+            self.args.class_counts = None
+            return
+
+        # Build a temporary dataset to count samples
+        dataset = self.build_dataset(str(train_path), mode="train")
+        for sample in dataset.samples:
+            cls_idx = sample[1]
+            if cls_idx < nc:
+                counts[cls_idx] += 1
+
+        # Warn about zero-count classes.  Their CB-Focal weight will be set to 0
+        # (ignored) by v8ClassificationLoss so they don't distort other weights.
+        zero_classes = [self.data["names"][i] for i, c in enumerate(counts) if c == 0]
+        if zero_classes:
+            LOGGER.warning(
+                f"cls_loss='cb_focal': classes {zero_classes} have 0 training samples; "
+                "their CB-Focal weight will be set to 0 (ignored in loss)."
+            )
+
+        self.args.class_counts = counts
+        LOGGER.info(f"Classification class counts (train): {dict(zip(self.data['names'].values(), counts))}")
 
     def get_model(self, cfg=None, weights=None, verbose: bool = True):
         """Return a modified PyTorch model configured for training YOLO classification.
