@@ -1082,11 +1082,13 @@ class v8ClassificationLoss:
             )
 
         # Manual label-smoothing for torch < 1.10
+        # Matches PyTorch semantics: target = (1 - ε) * one_hot + ε / C
+        #   correct class  → (1 - ε) + ε/C
+        #   other classes   → ε/C
         nc = logits.shape[1]
         log_probs = F.log_softmax(logits, dim=1)  # (B, C)
-        # Smoothed target distribution: (1 - ε) on correct class, ε/(C-1) elsewhere
-        smooth = torch.full_like(log_probs, self.label_smoothing / (nc - 1))
-        smooth.scatter_(1, targets.unsqueeze(1), 1.0 - self.label_smoothing)
+        smooth = torch.full_like(log_probs, self.label_smoothing / nc)
+        smooth.scatter_(1, targets.unsqueeze(1), 1.0 - self.label_smoothing + self.label_smoothing / nc)
         # Per-sample loss
         loss = -(smooth * log_probs).sum(dim=1)  # (B,)
         if weight is not None:
@@ -1135,10 +1137,10 @@ class v8ClassificationLoss:
         log_probs = F.log_softmax(preds, dim=1)  # (B, C)
         probs = log_probs.exp()  # (B, C)
 
-        # One-hot with optional label smoothing
+        # One-hot with optional label smoothing (PyTorch semantics: ε/C everywhere, 1-ε+ε/C on target)
         if self.label_smoothing > 0:
-            one_hot = torch.full_like(probs, self.label_smoothing / (nc - 1))
-            one_hot.scatter_(1, targets.unsqueeze(1), 1.0 - self.label_smoothing)
+            one_hot = torch.full_like(probs, self.label_smoothing / nc)
+            one_hot.scatter_(1, targets.unsqueeze(1), 1.0 - self.label_smoothing + self.label_smoothing / nc)
         else:
             one_hot = torch.zeros_like(probs)
             one_hot.scatter_(1, targets.unsqueeze(1), 1.0)
