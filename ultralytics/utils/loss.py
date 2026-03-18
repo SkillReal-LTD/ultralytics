@@ -13,7 +13,7 @@ from ultralytics.utils import LOGGER
 from ultralytics.utils.metrics import OKS_SIGMA, RLE_WEIGHT
 from ultralytics.utils.ops import crop_mask, xywh2xyxy, xyxy2xywh
 from ultralytics.utils.tal import RotatedTaskAlignedAssigner, TaskAlignedAssigner, dist2bbox, dist2rbox, make_anchors
-from ultralytics.utils.torch_utils import autocast
+from ultralytics.utils.torch_utils import TORCH_1_10, autocast
 
 from .metrics import bbox_iou, probiou
 from .tal import bbox2dist, rbox2dist
@@ -1061,6 +1061,38 @@ class v8ClassificationLoss:
             self._weight_device = device
         return self._weight
 
+    def _cross_entropy_with_smoothing(
+        self,
+        logits: torch.Tensor,
+        targets: torch.Tensor,
+        weight: torch.Tensor | None,
+    ) -> torch.Tensor:
+        """Cross-entropy with label smoothing, compatible with torch < 1.10.
+
+        ``F.cross_entropy(label_smoothing=...)`` was added in PyTorch 1.10.  On older
+        versions we fall back to a manual implementation so the library stays compatible
+        with the declared ``torch>=1.8`` minimum.
+        """
+        if self.label_smoothing == 0.0:
+            return F.cross_entropy(logits, targets, weight=weight, reduction="mean")
+
+        if TORCH_1_10:
+            return F.cross_entropy(
+                logits, targets, weight=weight, reduction="mean", label_smoothing=self.label_smoothing
+            )
+
+        # Manual label-smoothing for torch < 1.10
+        nc = logits.shape[1]
+        log_probs = F.log_softmax(logits, dim=1)  # (B, C)
+        # Smoothed target distribution: (1 - ε) on correct class, ε/(C-1) elsewhere
+        smooth = torch.full_like(log_probs, self.label_smoothing / (nc - 1))
+        smooth.scatter_(1, targets.unsqueeze(1), 1.0 - self.label_smoothing)
+        # Per-sample loss
+        loss = -(smooth * log_probs).sum(dim=1)  # (B,)
+        if weight is not None:
+            loss = loss * weight[targets]
+        return loss.mean()
+
     # ---------------------------------------------------------------------- forward
     def __call__(self, preds: Any, batch: dict[str, torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute the classification loss between predictions and true labels."""
@@ -1082,9 +1114,7 @@ class v8ClassificationLoss:
         weight = self._ensure_weight_device(preds.device)
 
         if self.cls_loss == "ce":
-            loss = F.cross_entropy(
-                preds, targets, weight=weight, reduction="mean", label_smoothing=self.label_smoothing
-            )
+            loss = self._cross_entropy_with_smoothing(preds, targets, weight)
         elif self.cls_loss in ("focal", "cb_focal"):
             loss = self._focal_loss(preds, targets, weight)
         else:
@@ -1165,9 +1195,7 @@ class v8ClassificationLoss:
         # Apply per-class importance weights if provided
         weight = self._ensure_weight_device(features.device)
 
-        loss = F.cross_entropy(
-            arcface_logits, targets, weight=weight, reduction="mean", label_smoothing=self.label_smoothing
-        )
+        loss = self._cross_entropy_with_smoothing(arcface_logits, targets, weight)
         return loss, loss.detach()
 
 

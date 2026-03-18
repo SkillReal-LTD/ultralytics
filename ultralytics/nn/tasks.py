@@ -720,6 +720,13 @@ class ClassificationModel(BaseModel):
             if isinstance(head, Classify):
                 head._return_features = True
                 fc_weight = head.linear.weight  # nn.Parameter (nc, feat_dim)
+                # ArcFace operates in angular (normalised) space — the bias is not
+                # used during the forward pass (features are returned directly).
+                # Freeze the bias so it doesn't accumulate stale gradients and to
+                # keep parameter management explicit (consistent with the original
+                # ArcFace paper which uses bias=False).
+                if head.linear.bias is not None:
+                    head.linear.bias.requires_grad = False
             else:
                 LOGGER.warning("cls_loss='arcface' requires a Classify head; falling back to 'ce'.")
                 cls_loss = "ce"
@@ -727,6 +734,9 @@ class ClassificationModel(BaseModel):
             # Ensure _return_features is off when not using ArcFace (safety for
             # models previously trained with ArcFace and reloaded with a different loss).
             head._return_features = False
+            # Unfreeze bias in case it was frozen by a previous ArcFace session.
+            if head.linear.bias is not None:
+                head.linear.bias.requires_grad = True
 
         return v8ClassificationLoss(
             cls_loss=cls_loss,

@@ -445,7 +445,7 @@ def test_classify_return_features():
 
 # ──────────────────────────────────────── 21. Backward compat: ArcFace→CE ────
 def test_init_criterion_resets_return_features():
-    """Switching from ArcFace to CE should reset _return_features on the Classify head."""
+    """Switching from ArcFace to CE should reset _return_features and unfreeze bias."""
     from types import SimpleNamespace
 
     from ultralytics.nn.modules.head import Classify
@@ -457,18 +457,20 @@ def test_init_criterion_resets_return_features():
     head = Classify(c1=256, c2=5)
     model.model = torch.nn.ModuleList([head])
 
-    # Simulate: previously trained with ArcFace (instance attr set to True)
-    head._return_features = True
+    # 1. Init with ArcFace → _return_features=True, bias frozen
+    model.args = SimpleNamespace(cls_loss="arcface")
+    criterion_af = model.init_criterion()
+    assert head._return_features is True
+    assert head.linear.bias.requires_grad is False, "ArcFace should freeze linear.bias"
+    assert criterion_af.cls_loss == "arcface"
 
-    # Now retrain with plain CE
+    # 2. Switch to CE → _return_features=False, bias unfrozen
     model.args = SimpleNamespace(cls_loss="ce")
-    criterion = model.init_criterion()
-
-    # Head flag must be reset
+    criterion_ce = model.init_criterion()
     assert head._return_features is False, "_return_features should be False after switching from ArcFace to CE"
-    # Criterion should be plain CE
-    assert criterion.cls_loss == "ce"
-    print("[PASS] init_criterion resets _return_features when cls_loss != 'arcface'")
+    assert head.linear.bias.requires_grad is True, "Switching to CE should unfreeze linear.bias"
+    assert criterion_ce.cls_loss == "ce"
+    print("[PASS] init_criterion resets _return_features and unfreezes bias when cls_loss != 'arcface'")
 
 
 # ──────────────────────────────────────── 22. No-args backward compat ─────────
