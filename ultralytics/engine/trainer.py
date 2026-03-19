@@ -484,7 +484,10 @@ class BaseTrainer:
 
             self.run_callbacks("on_train_epoch_end")
             if RANK in {-1, 0}:
-                self.ema.update_attr(self.model, include=["yaml", "nc", "args", "names", "stride", "class_weights", "class_weights_resolved"])
+                self.ema.update_attr(
+                    self.model,
+                    include=["yaml", "nc", "args", "names", "stride", "class_weights", "class_weights_resolved"],
+                )
 
             # Validation
             final_epoch = epoch + 1 >= self.epochs

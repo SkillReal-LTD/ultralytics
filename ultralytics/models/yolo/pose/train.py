@@ -96,9 +96,7 @@ class PoseTrainer(yolo.detect.DetectionTrainer):
             self.loss_names += ("rle_loss",)
         args = copy(self.args)
         args.class_weights_resolved = getattr(self.model, "class_weights_resolved", None)
-        return yolo.pose.PoseValidator(
-            self.test_loader, save_dir=self.save_dir, args=args, _callbacks=self.callbacks
-        )
+        return yolo.pose.PoseValidator(self.test_loader, save_dir=self.save_dir, args=args, _callbacks=self.callbacks)
 
     def get_dataset(self) -> dict[str, Any]:
         """Retrieve the dataset and ensure it contains the required `kpt_shape` key.
