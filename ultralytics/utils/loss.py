@@ -362,7 +362,7 @@ class v8DetectionLoss:
         self.proj = torch.arange(m.reg_max, dtype=torch.float, device=device)
 
         # Per-class loss weights for box/DFL loss (reduces FN for important classes)
-        cw = getattr(h, "class_weights_resolved", None)
+        cw = getattr(model, "class_weights_resolved", None)
         if cw is not None:
             self.class_weights = torch.tensor(cw, dtype=torch.float, device=device)  # (nc,)
         else:

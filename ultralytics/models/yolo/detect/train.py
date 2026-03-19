@@ -156,11 +156,11 @@ class DetectionTrainer(BaseTrainer):
 
         Accepts either a dict mapping class names to weights (e.g. {"cone": 5.0}) or a list of floats (one per class).
         Classes not specified in a dict default to weight 1.0. The resolved list is stored in
-        ``self.args.class_weights_resolved`` and also logged for visibility.
+        ``self.model.class_weights_resolved`` and also logged for visibility.
         """
         raw = getattr(self.args, "class_weights", None)
         if not raw:
-            self.args.class_weights_resolved = None
+            self.model.class_weights_resolved = None
             return
 
         nc = self.data["nc"]
@@ -191,7 +191,7 @@ class DetectionTrainer(BaseTrainer):
                 f"Example: class_weights={{cone: 5.0, person: 1.0}} or class_weights=[1.0, 5.0, 1.0]"
             )
 
-        self.args.class_weights_resolved = resolved
+        self.model.class_weights_resolved = resolved
         # Log resolved weights
         weight_str = ", ".join(f"{names[i]}: {resolved[i]}" for i in range(nc))
         LOGGER.info(f"Class weights resolved: {{{weight_str}}}")
@@ -215,8 +215,10 @@ class DetectionTrainer(BaseTrainer):
     def get_validator(self):
         """Return a DetectionValidator for YOLO model validation."""
         self.loss_names = "box_loss", "cls_loss", "dfl_loss"
+        args = copy(self.args)
+        args.class_weights_resolved = getattr(self.model, "class_weights_resolved", None)
         return yolo.detect.DetectionValidator(
-            self.test_loader, save_dir=self.save_dir, args=copy(self.args), _callbacks=self.callbacks
+            self.test_loader, save_dir=self.save_dir, args=args, _callbacks=self.callbacks
         )
 
     def label_loss_items(self, loss_items: list[float] | None = None, prefix: str = "train"):
