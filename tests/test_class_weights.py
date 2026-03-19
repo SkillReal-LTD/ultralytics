@@ -176,8 +176,12 @@ def test_loss_class_weights_tensor():
     # Build a minimal mock model
     model = MagicMock()
     model.parameters.return_value = iter([torch.zeros(1)])  # device = cpu
-    model.args = SimpleNamespace(box=7.5, cls=0.5, dfl=1.5)
-    model.class_weights_resolved = [1.0, 5.0, 1.0]
+    model.args = SimpleNamespace(
+        box=7.5,
+        cls=0.5,
+        dfl=1.5,
+        class_weights_resolved=[1.0, 5.0, 1.0],
+    )
     m = MagicMock()
     m.stride = torch.tensor([8.0, 16.0, 32.0])
     m.nc = 3
@@ -203,7 +207,6 @@ def test_loss_no_class_weights():
     model = MagicMock()
     model.parameters.return_value = iter([torch.zeros(1)])
     model.args = SimpleNamespace(box=7.5, cls=0.5, dfl=1.5)
-    model.class_weights_resolved = None
     m = MagicMock()
     m.stride = torch.tensor([8.0, 16.0, 32.0])
     m.nc = 3
@@ -234,8 +237,8 @@ def test_trainer_resolve_dict():
 
     DetectionTrainer._resolve_class_weights(trainer)
 
-    assert trainer.model.class_weights_resolved == [2.0, 1.0, 5.0]
-    print(f"  Resolved: {trainer.model.class_weights_resolved}")
+    assert trainer.args.class_weights_resolved == [2.0, 1.0, 5.0]
+    print(f"  Resolved: {trainer.args.class_weights_resolved}")
     print("  ✓ Dict resolve OK")
 
 
@@ -253,7 +256,7 @@ def test_trainer_resolve_list():
 
     DetectionTrainer._resolve_class_weights(trainer)
 
-    assert trainer.model.class_weights_resolved == [2.0, 1.0, 5.0]
+    assert trainer.args.class_weights_resolved == [2.0, 1.0, 5.0]
     print("  ✓ List resolve OK")
 
 
@@ -271,7 +274,7 @@ def test_trainer_resolve_none():
 
     DetectionTrainer._resolve_class_weights(trainer)
 
-    assert trainer.model.class_weights_resolved is None
+    assert trainer.args.class_weights_resolved is None
     print("  ✓ None resolve OK")
 
 
@@ -293,7 +296,7 @@ def test_trainer_resolve_missing_class_warns():
         DetectionTrainer._resolve_class_weights(trainer)
         mock_logger.warning.assert_called_once()
 
-    assert trainer.model.class_weights_resolved == [2.0, 1.0]  # unicorn ignored, dog defaults to 1.0
+    assert trainer.args.class_weights_resolved == [2.0, 1.0]  # unicorn ignored, dog defaults to 1.0
     print("  ✓ Unknown class warning OK")
 
 

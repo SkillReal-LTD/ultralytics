@@ -244,8 +244,8 @@ def test_resolve_class_weights_dict():
 
     trainer._resolve_class_weights()
 
-    assert trainer.model.class_weights_resolved == [3.0, 1.0, 5.0], f"Got {trainer.model.class_weights_resolved}"
-    print(f"[PASS] resolve_class_weights dict: {trainer.model.class_weights_resolved}")
+    assert trainer.args.class_weights_resolved == [3.0, 1.0, 5.0], f"Got {trainer.args.class_weights_resolved}"
+    print(f"[PASS] resolve_class_weights dict: {trainer.args.class_weights_resolved}")
 
 
 # ──────────────────────────────────────── 13. Resolve class_weights list ─────
@@ -260,8 +260,8 @@ def test_resolve_class_weights_list():
 
     trainer._resolve_class_weights()
 
-    assert trainer.model.class_weights_resolved == [2.0, 3.0, 1.0]
-    print(f"[PASS] resolve_class_weights list: {trainer.model.class_weights_resolved}")
+    assert trainer.args.class_weights_resolved == [2.0, 3.0, 1.0]
+    print(f"[PASS] resolve_class_weights list: {trainer.args.class_weights_resolved}")
 
 
 # ──────────────────────────────────────── 14. Resolve — no class_weights ─────
@@ -276,7 +276,7 @@ def test_resolve_class_weights_none():
 
     trainer._resolve_class_weights()
 
-    assert trainer.model.class_weights_resolved is None
+    assert trainer.args.class_weights_resolved is None
     print("[PASS] resolve_class_weights None -> None")
 
 

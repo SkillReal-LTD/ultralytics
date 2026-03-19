@@ -86,7 +86,7 @@ class ClassificationTrainer(BaseTrainer):
         names = self.data["names"]  # {0: 'cat', 1: 'dog', ...}
 
         if not raw:
-            self.model.class_weights_resolved = None
+            self.args.class_weights_resolved = None
             return
 
         resolved = [1.0] * nc
@@ -104,7 +104,7 @@ class ClassificationTrainer(BaseTrainer):
         else:
             raise TypeError(f"Unsupported class_weights type: {type(raw)}. Expected dict or list.")
 
-        self.model.class_weights_resolved = resolved
+        self.args.class_weights_resolved = resolved
         LOGGER.info(f"Classification class weights resolved: {dict(zip(names.values(), resolved))}")
 
     def _compute_class_counts(self):

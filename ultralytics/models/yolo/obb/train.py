@@ -74,8 +74,6 @@ class OBBTrainer(yolo.detect.DetectionTrainer):
     def get_validator(self):
         """Return an instance of OBBValidator for validation of YOLO model."""
         self.loss_names = "box_loss", "cls_loss", "dfl_loss", "angle_loss"
-        args = copy(self.args)
-        args.class_weights_resolved = getattr(self.model, "class_weights_resolved", None)
         return yolo.obb.OBBValidator(
-            self.test_loader, save_dir=self.save_dir, args=args, _callbacks=self.callbacks
+            self.test_loader, save_dir=self.save_dir, args=copy(self.args), _callbacks=self.callbacks
         )

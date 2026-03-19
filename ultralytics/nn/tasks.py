@@ -740,7 +740,7 @@ class ClassificationModel(BaseModel):
 
         return v8ClassificationLoss(
             cls_loss=cls_loss,
-            class_weights=getattr(self, "class_weights_resolved", None),
+            class_weights=getattr(args, "class_weights_resolved", None),
             class_counts=getattr(args, "class_counts", None),
             label_smoothing=getattr(args, "label_smoothing", 0.0),
             focal_gamma=getattr(args, "focal_gamma", 2.0),
