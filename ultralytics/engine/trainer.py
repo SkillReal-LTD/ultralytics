@@ -484,7 +484,7 @@ class BaseTrainer:
 
             self.run_callbacks("on_train_epoch_end")
             if RANK in {-1, 0}:
-                self.ema.update_attr(self.model, include=["yaml", "nc", "args", "names", "stride", "class_weights"])
+                self.ema.update_attr(self.model, include=["yaml", "nc", "args", "names", "stride", "class_weights", "class_weights_resolved"])
 
             # Validation
             final_epoch = epoch + 1 >= self.epochs
@@ -946,6 +946,7 @@ class BaseTrainer:
                     ckpt_args["data"] = self.args.data
 
                 resume = True
+                ckpt_args.pop("class_weights_resolved", None)  # derived value, not a valid config key
                 self.args = get_cfg(ckpt_args)
                 self.args.model = self.args.resume = str(last)  # reinstate model
                 for k in (
