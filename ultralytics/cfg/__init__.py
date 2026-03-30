@@ -311,7 +311,9 @@ def get_cfg(
     # Merge overrides
     if overrides:
         overrides = cfg2dict(overrides)
-        check_dict_alignment(cfg, overrides, allowed_custom_keys={"class_counts", "class_weights_resolved"})
+        check_dict_alignment(
+            cfg, overrides, allowed_custom_keys={"augmentations", "save_dir", "class_counts", "class_weights_resolved"}
+        )
         cfg = {**cfg, **overrides}  # merge cfg and overrides dicts (prefer overrides)
 
     # Special handling for numeric project/name
