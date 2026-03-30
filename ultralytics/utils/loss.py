@@ -1052,12 +1052,13 @@ class v8ClassificationLoss:
         self._weight_device: torch.device | None = None
 
     # ---------------------------------------------------------------------- helpers
-    def _ensure_weight_device(self, device: torch.device) -> torch.Tensor | None:
-        """Move the weight tensor to the correct device (once)."""
+    def _ensure_weight_device(self, device: torch.device, dtype: torch.dtype | None = None) -> torch.Tensor | None:
+        """Move the weight tensor to the correct device and dtype (once)."""
         if self._weight is None:
             return None
-        if self._weight_device != device:
-            self._weight = self._weight.to(device)
+        target_dtype = dtype or self._weight.dtype
+        if self._weight_device != device or self._weight.dtype != target_dtype:
+            self._weight = self._weight.to(device=device, dtype=target_dtype)
             self._weight_device = device
         return self._weight
 
@@ -1105,7 +1106,7 @@ class v8ClassificationLoss:
                 # Eval mode: Classify head returns (probs, logits).
                 # Use standard CE on logits for the validation loss tracker.
                 logits = preds[1]
-                weight = self._ensure_weight_device(logits.device)
+                weight = self._ensure_weight_device(logits.device, logits.dtype)
                 loss = F.cross_entropy(logits, targets, weight=weight, reduction="mean")
                 return loss, loss.detach()
             # Training mode: Classify head returns raw features (B, D).
@@ -1113,7 +1114,7 @@ class v8ClassificationLoss:
 
         # For all other losses, preds is logits (training) or (probs, logits) (inference)
         preds = preds[1] if isinstance(preds, (list, tuple)) else preds
-        weight = self._ensure_weight_device(preds.device)
+        weight = self._ensure_weight_device(preds.device, preds.dtype)
 
         if self.cls_loss == "ce":
             loss = self._cross_entropy_with_smoothing(preds, targets, weight)
