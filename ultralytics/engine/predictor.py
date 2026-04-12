@@ -159,17 +159,18 @@ class BasePredictor:
         """
         not_tensor = not isinstance(im, torch.Tensor)
         if not_tensor:
-            im = np.stack(self.pre_transform(im))
-            if im.shape[-1] == 3:
-                im = im[..., ::-1]  # BGR to RGB
-            im = im.transpose((0, 3, 1, 2))  # BHWC to BCHW, (n, 3, h, w)
-            im = np.ascontiguousarray(im)  # contiguous
-            im = torch.from_numpy(im)
-
-        im = im.to(self.device)
-        im = im.half() if self.model.fp16 else im.float()  # uint8 to fp16/32
-        if not_tensor:
+            im = np.stack(self.pre_transform(im))  # (B, H, W, C) contiguous uint8
+            im = torch.from_numpy(np.ascontiguousarray(im))  # zero-copy if already contiguous
+            im = im.to(self.device)  # transfer BHWC uint8 to GPU
+            im = im.permute(0, 3, 1, 2)  # BHWC → BCHW (view, free on GPU)
+            if im.shape[1] == 3:
+                im = im.flip(1)  # BGR → RGB on GPU
+            im = im.contiguous()  # make contiguous on GPU (fast, high bandwidth)
+            im = im.half() if self.model.fp16 else im.float()
             im /= 255  # 0 - 255 to 0.0 - 1.0
+        else:
+            im = im.to(self.device)
+            im = im.half() if self.model.fp16 else im.float()
         return im
 
     def inference(self, im: torch.Tensor, *args, **kwargs):
@@ -190,15 +191,18 @@ class BasePredictor:
         Returns:
             (list[np.ndarray]): List of transformed images.
         """
+        # Fast path: skip LetterBox entirely when all images already match target size
+        target_h, target_w = (self.imgsz, self.imgsz) if isinstance(self.imgsz, int) else tuple(self.imgsz)
+        if im and all(x.shape[0] == target_h and x.shape[1] == target_w for x in im):
+            return im
+
         same_shapes = len({x.shape for x in im}) == 1
-        letterbox = LetterBox(
-            self.imgsz,
-            auto=same_shapes
-            and self.args.rect
-            and (self.model.pt or (getattr(self.model, "dynamic", False) and not self.model.imx)),
-            stride=self.model.stride,
-        )
-        return [letterbox(image=x) for x in im]
+        auto = same_shapes and self.args.rect and (self.model.pt or (getattr(self.model, "dynamic", False) and not self.model.imx))
+        cache_key = (tuple(self.imgsz) if isinstance(self.imgsz, list) else self.imgsz, auto, int(self.model.stride))
+        if not hasattr(self, "_letterbox_cache_key") or self._letterbox_cache_key != cache_key:
+            self._cached_letterbox = LetterBox(self.imgsz, auto=auto, stride=self.model.stride)
+            self._letterbox_cache_key = cache_key
+        return [self._cached_letterbox(image=x) for x in im]
 
     def postprocess(self, preds, img, orig_imgs):
         """Post-process predictions for an image and return them."""
@@ -252,7 +256,24 @@ class BasePredictor:
                 inference.
             stride (int, optional): Model stride for image size checking.
         """
+        # Fast path: skip full rebuild for repeated numpy/list calls with same-shaped images
+        if isinstance(source, (list, np.ndarray)) and hasattr(self, "_cached_source_type"):
+            self.imgsz = getattr(self, "_cached_imgsz", None) or check_imgsz(
+                self.args.imgsz, stride=stride or self.model.stride, min_dim=2
+            )
+            self.dataset = load_inference_source(
+                source=source,
+                batch=self.args.batch,
+                vid_stride=self.args.vid_stride,
+                buffer=self.args.stream_buffer,
+                channels=getattr(self.model, "ch", 3),
+            )
+            self.source_type = self._cached_source_type
+            self.vid_writer = {}
+            return
+
         self.imgsz = check_imgsz(self.args.imgsz, stride=stride or self.model.stride, min_dim=2)  # check image size
+        self._cached_imgsz = self.imgsz
         self.dataset = load_inference_source(
             source=source,
             batch=self.args.batch,
@@ -261,6 +282,7 @@ class BasePredictor:
             channels=getattr(self.model, "ch", 3),
         )
         self.source_type = self.dataset.source_type
+        self._cached_source_type = self.source_type
         if (
             self.source_type.stream
             or self.source_type.screenshot
@@ -310,44 +332,58 @@ class BasePredictor:
                 self.done_warmup = True
 
             self.seen, self.windows, self.batch = 0, [], None
-            profilers = (
-                ops.Profile(device=self.device),
-                ops.Profile(device=self.device),
-                ops.Profile(device=self.device),
-            )
-            self.run_callbacks("on_predict_start")
+            # Only profile when timing data is actually needed (verbose/save modes)
+            _need_profiling = self.args.verbose or self.args.save or self.args.save_txt or self.args.show
+            if _need_profiling:
+                if not hasattr(self, "_profilers"):
+                    self._profilers = (
+                        ops.Profile(device=self.device),
+                        ops.Profile(device=self.device),
+                        ops.Profile(device=self.device),
+                    )
+                profilers = self._profilers
+            _has_callbacks = any(self.callbacks.get(e) for e in ("on_predict_start", "on_predict_batch_start", "on_predict_postprocess_end", "on_predict_batch_end"))
+            if _has_callbacks:
+                self.run_callbacks("on_predict_start")
             for batch in self.dataset:
                 self.batch = batch
-                self.run_callbacks("on_predict_batch_start")
+                if _has_callbacks:
+                    self.run_callbacks("on_predict_batch_start")
                 paths, im0s, s = self.batch
 
-                # Preprocess
-                with profilers[0]:
+                # Preprocess + Inference + Postprocess
+                if _need_profiling:
+                    with profilers[0]:
+                        im = self.preprocess(im0s)
+                    with profilers[1]:
+                        preds = self.inference(im, *args, **kwargs)
+                        if self.args.embed:
+                            yield from [preds] if isinstance(preds, torch.Tensor) else preds
+                            continue
+                    with profilers[2]:
+                        self.results = self.postprocess(preds, im, im0s)
+                else:
                     im = self.preprocess(im0s)
-
-                # Inference
-                with profilers[1]:
                     preds = self.inference(im, *args, **kwargs)
                     if self.args.embed:
-                        yield from [preds] if isinstance(preds, torch.Tensor) else preds  # yield embedding tensors
+                        yield from [preds] if isinstance(preds, torch.Tensor) else preds
                         continue
-
-                # Postprocess
-                with profilers[2]:
                     self.results = self.postprocess(preds, im, im0s)
-                self.run_callbacks("on_predict_postprocess_end")
+
+                if _has_callbacks:
+                    self.run_callbacks("on_predict_postprocess_end")
 
                 # Visualize, save, write results
                 n = len(im0s)
                 try:
                     for i in range(n):
                         self.seen += 1
-                        self.results[i].speed = {
-                            "preprocess": profilers[0].dt * 1e3 / n,
-                            "inference": profilers[1].dt * 1e3 / n,
-                            "postprocess": profilers[2].dt * 1e3 / n,
-                        }
-                        if self.args.verbose or self.args.save or self.args.save_txt or self.args.show:
+                        if _need_profiling:
+                            self.results[i].speed = {
+                                "preprocess": profilers[0].dt * 1e3 / n,
+                                "inference": profilers[1].dt * 1e3 / n,
+                                "postprocess": profilers[2].dt * 1e3 / n,
+                            }
                             s[i] += self.write_results(i, Path(paths[i]), im, s)
                 except StopIteration:
                     break
@@ -356,7 +392,8 @@ class BasePredictor:
                 if self.args.verbose:
                     LOGGER.info("\n".join(s))
 
-                self.run_callbacks("on_predict_batch_end")
+                if _has_callbacks:
+                    self.run_callbacks("on_predict_batch_end")
                 yield from self.results
 
         # Release assets

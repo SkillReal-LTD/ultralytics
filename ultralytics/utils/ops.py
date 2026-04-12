@@ -118,6 +118,9 @@ def scale_boxes(img1_shape, boxes, img0_shape, ratio_pad=None, padding: bool = T
     """
     if ratio_pad is None:  # calculate from img0_shape
         gain = min(img1_shape[0] / img0_shape[0], img1_shape[1] / img0_shape[1])  # gain  = old / new
+        # Fast path: no scaling needed when shapes match
+        if gain == 1.0 and img1_shape[0] == img0_shape[0] and img1_shape[1] == img0_shape[1]:
+            return boxes if xywh else clip_boxes(boxes, img0_shape)
         pad_x = round((img1_shape[1] - img0_shape[1] * gain) / 2 - 0.1)
         pad_y = round((img1_shape[0] - img0_shape[0] * gain) / 2 - 0.1)
     else:
@@ -578,6 +581,9 @@ def scale_coords(img1_shape, coords, img0_shape, ratio_pad=None, normalize: bool
     if ratio_pad is None:  # calculate from img0_shape
         img1_h, img1_w = img1_shape[:2]  # supports both HWC or HW shapes
         gain = min(img1_h / img0_h, img1_w / img0_w)  # gain  = old / new
+        # Fast path: no scaling needed when shapes match
+        if gain == 1.0 and img1_h == img0_h and img1_w == img0_w and not normalize:
+            return clip_coords(coords, img0_shape)
         pad = (img1_w - img0_w * gain) / 2, (img1_h - img0_h * gain) / 2  # wh padding
     else:
         gain = ratio_pad[0][0]
