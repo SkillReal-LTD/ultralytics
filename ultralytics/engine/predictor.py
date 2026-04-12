@@ -197,7 +197,11 @@ class BasePredictor:
             return im
 
         same_shapes = len({x.shape for x in im}) == 1
-        auto = same_shapes and self.args.rect and (self.model.pt or (getattr(self.model, "dynamic", False) and not self.model.imx))
+        auto = (
+            same_shapes
+            and self.args.rect
+            and (self.model.pt or (getattr(self.model, "dynamic", False) and not self.model.imx))
+        )
         cache_key = (tuple(self.imgsz) if isinstance(self.imgsz, list) else self.imgsz, auto, int(self.model.stride))
         if not hasattr(self, "_letterbox_cache_key") or self._letterbox_cache_key != cache_key:
             self._cached_letterbox = LetterBox(self.imgsz, auto=auto, stride=self.model.stride)
@@ -342,7 +346,15 @@ class BasePredictor:
                         ops.Profile(device=self.device),
                     )
                 profilers = self._profilers
-            _has_callbacks = any(self.callbacks.get(e) for e in ("on_predict_start", "on_predict_batch_start", "on_predict_postprocess_end", "on_predict_batch_end"))
+            _has_callbacks = any(
+                self.callbacks.get(e)
+                for e in (
+                    "on_predict_start",
+                    "on_predict_batch_start",
+                    "on_predict_postprocess_end",
+                    "on_predict_batch_end",
+                )
+            )
             if _has_callbacks:
                 self.run_callbacks("on_predict_start")
             for batch in self.dataset:
