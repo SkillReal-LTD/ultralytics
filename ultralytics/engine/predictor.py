@@ -260,11 +260,18 @@ class BasePredictor:
                 inference.
             stride (int, optional): Model stride for image size checking.
         """
-        # Fast path: skip full rebuild for repeated numpy/list calls with same-shaped images
-        if isinstance(source, (list, np.ndarray)) and hasattr(self, "_cached_source_type"):
-            self.imgsz = getattr(self, "_cached_imgsz", None) or check_imgsz(
-                self.args.imgsz, stride=stride or self.model.stride, min_dim=2
+        # Fast path: skip full rebuild for repeated in-memory numpy array calls with same imgsz
+        if (
+            isinstance(source, (list, np.ndarray))
+            and hasattr(self, "_cached_source_type")
+            and (
+                isinstance(source, np.ndarray)
+                or (isinstance(source, list) and all(isinstance(x, np.ndarray) for x in source))
             )
+            and check_imgsz(self.args.imgsz, stride=stride or self.model.stride, min_dim=2)
+            == getattr(self, "_cached_imgsz", None)
+        ):
+            self.imgsz = self._cached_imgsz
             self.dataset = load_inference_source(
                 source=source,
                 batch=self.args.batch,
@@ -339,13 +346,11 @@ class BasePredictor:
             # Only profile when timing data is actually needed (verbose/save modes)
             _need_profiling = self.args.verbose or self.args.save or self.args.save_txt or self.args.show
             if _need_profiling:
-                if not hasattr(self, "_profilers"):
-                    self._profilers = (
-                        ops.Profile(device=self.device),
-                        ops.Profile(device=self.device),
-                        ops.Profile(device=self.device),
-                    )
-                profilers = self._profilers
+                profilers = (
+                    ops.Profile(device=self.device),
+                    ops.Profile(device=self.device),
+                    ops.Profile(device=self.device),
+                )
             _has_callbacks = any(
                 self.callbacks.get(e)
                 for e in (
