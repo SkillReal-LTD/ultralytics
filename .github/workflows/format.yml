@@ -20,6 +20,14 @@ permissions:
 
 jobs:
   actions:
+    # Upstream only. On this fork the action holds contents: write and auto-commits a
+    # repo-wide reformat onto every PR branch — 90+ files of churn on top of whatever
+    # the PR was actually about, re-added on each synchronize so it cannot be undone
+    # by force-pushing. This fork's main is also installed directly by
+    # algo-ai-training dockers/training/Dockerfile.prod, so that churn would reach
+    # the training image. The AI labelling/summary steps need upstream-only secrets
+    # anyway. Guard rather than delete, so upstream syncs of this file stay conflict-free.
+    if: github.repository == 'ultralytics/ultralytics'
     runs-on: ubuntu-latest
     steps:
       - name: Run Ultralytics Actions
