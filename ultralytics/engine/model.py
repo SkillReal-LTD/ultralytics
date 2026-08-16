@@ -528,9 +528,11 @@ class Model(torch.nn.Module):
             self.predictor = (predictor or self._smart_load("predictor"))(overrides=args, _callbacks=self.callbacks)
             self.predictor.setup_model(model=self.model, verbose=is_cli)
         else:  # only update args if predictor is already setup
-            self.predictor.args = get_cfg(self.predictor.args, args)
-            if "project" in args or "name" in args:
-                self.predictor.save_dir = get_save_dir(self.predictor.args)
+            if not hasattr(self.predictor, "_last_args") or self.predictor._last_args != args:
+                self.predictor.args = get_cfg(self.predictor.args, args)
+                self.predictor._last_args = args.copy()
+                if "project" in args or "name" in args:
+                    self.predictor.save_dir = get_save_dir(self.predictor.args)
         if prompts and hasattr(self.predictor, "set_prompts"):  # for SAM-type models
             self.predictor.set_prompts(prompts)
         return self.predictor.predict_cli(source=source) if is_cli else self.predictor(source=source, stream=stream)
