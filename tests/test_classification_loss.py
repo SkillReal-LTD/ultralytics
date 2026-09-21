@@ -66,7 +66,7 @@ def test_default_ce():
     expected = torch.nn.functional.cross_entropy(preds, batch["cls"])
 
     assert torch.allclose(loss, expected, atol=1e-5), f"{loss.item()} != {expected.item()}"
-    assert loss_det.requires_grad is False
+    assert loss_det["loss"].requires_grad is False
     print(f"[PASS] default CE: loss={loss.item():.5f}")
 
 
@@ -329,7 +329,7 @@ def test_arcface_basic():
 
     assert loss.item() > 0, "ArcFace loss should be positive"
     assert features.grad is not None, "ArcFace loss should be differentiable w.r.t. features"
-    assert loss_det.requires_grad is False
+    assert loss_det["loss"].requires_grad is False
     print(f"[PASS] ArcFace basic: loss={loss.item():.5f}")
 
 

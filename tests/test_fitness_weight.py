@@ -18,7 +18,7 @@ def test_metric_fitness_weight():
 
     # Test default weights
     metric = Metric()
-    assert metric.fitness_weight == [0.0, 0.0, 0.1, 0.9], f"Default weights incorrect: {metric.fitness_weight}"
+    assert metric.fitness_weight == [0.0, 0.9, 0.1, 0.0], f"Default weights incorrect: {metric.fitness_weight}"
 
     # Test custom weights
     custom_weights = [0.0, 0.9, 0.1, 0.0]

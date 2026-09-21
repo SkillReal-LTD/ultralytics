@@ -168,7 +168,7 @@ def test_no_class_weights_unchanged():
 
 
 def test_loss_class_weights_tensor():
-    """V8DetectionLoss stores class_weights tensor when model.args has class_weights_resolved."""
+    """V8DetectionLoss stores box_class_weights tensor when model.args has class_weights_resolved."""
     print("Testing v8DetectionLoss class_weights tensor init...")
     from types import SimpleNamespace
     from unittest.mock import MagicMock
@@ -191,15 +191,15 @@ def test_loss_class_weights_tensor():
     from ultralytics.utils.loss import v8DetectionLoss
 
     loss_fn = v8DetectionLoss(model)
-    assert loss_fn.class_weights is not None
-    assert loss_fn.class_weights.shape == (3,)
-    assert loss_fn.class_weights[1].item() == 5.0
-    print(f"  class_weights tensor: {loss_fn.class_weights}")
+    assert loss_fn.box_class_weights is not None
+    assert loss_fn.box_class_weights.shape == (3,)
+    assert loss_fn.box_class_weights[1].item() == 5.0
+    print(f"  class_weights tensor: {loss_fn.box_class_weights}")
     print("  ✓ Loss class_weights tensor OK")
 
 
 def test_loss_no_class_weights():
-    """V8DetectionLoss sets class_weights to None when not configured."""
+    """V8DetectionLoss sets box_class_weights to None when not configured."""
     print("Testing v8DetectionLoss without class_weights...")
     from types import SimpleNamespace
     from unittest.mock import MagicMock
@@ -216,7 +216,7 @@ def test_loss_no_class_weights():
     from ultralytics.utils.loss import v8DetectionLoss
 
     loss_fn = v8DetectionLoss(model)
-    assert loss_fn.class_weights is None
+    assert loss_fn.box_class_weights is None
     print("  ✓ Loss no class_weights (None) OK")
 
 
