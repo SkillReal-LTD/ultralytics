@@ -14,6 +14,7 @@ import pytest
 from ultralytics import YOLO
 from ultralytics.cfg import get_cfg
 from ultralytics.utils import DEFAULT_CFG_DICT
+from ultralytics.utils.metrics import DEFAULT_FITNESS_WEIGHT
 
 IMGSZ = 64  # pipeline uses 640; shape-only paths are identical and this keeps runs short
 
@@ -62,7 +63,7 @@ def test_fork_only_keys_survive():
         "seg_boundary_kernel",
     ):
         assert k in DEFAULT_CFG_DICT, f"fork config key '{k}' disappeared"
-    assert DEFAULT_CFG_DICT["fitness_weight"] == [0.0, 0.9, 0.1, 0.0]
+    assert DEFAULT_CFG_DICT["fitness_weight"] == DEFAULT_FITNESS_WEIGHT
     assert DEFAULT_CFG_DICT["cls_loss"] == "ce"
     assert DEFAULT_CFG_DICT["seg_boundary_kernel"] == 3
 

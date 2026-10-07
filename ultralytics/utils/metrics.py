@@ -16,6 +16,11 @@ import torch.nn.functional as F
 from ultralytics.utils import LOGGER, DataExportMixin, SimpleClass, TryExcept, checks, plt_settings
 from ultralytics.utils.plotting import colors
 
+# Default fitness weights [P, R, mAP@0.5, mAP@0.5:0.95], recall-first for the SkillReal datasets.
+# Precision must stay non-zero: with weight 0 an untrained head that predicts everywhere scores
+# recall ~1.0 at precision ~0.005 and outranks every converged epoch, so best.pt locks onto it.
+DEFAULT_FITNESS_WEIGHT = [0.1, 0.6, 0.3, 0.0]
+
 OKS_SIGMA = np.array([0.1, 0.1, 0.1, 0.1, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]) / 10.0
 RLE_WEIGHT = np.array(
     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.2, 1.2, 1.5, 1.5, 1.0, 1.0, 1.2, 1.2, 1.5, 1.5], dtype=np.float32
@@ -993,7 +998,7 @@ class Metric(SimpleClass):
         if fitness_weight and len(fitness_weight) in (8, 10):
             self.fitness_weight = fitness_weight[:4]
         else:
-            self.fitness_weight = fitness_weight or [0.0, 0.9, 0.1, 0.0]  # default weights for SkillReal dataset
+            self.fitness_weight = fitness_weight or list(DEFAULT_FITNESS_WEIGHT)
         # Per-class weights for weighted mean metrics (None = standard unweighted mean)
         self.class_weights = np.array(class_weights, dtype=np.float64) if class_weights is not None else None
         self.image_metrics = {}
