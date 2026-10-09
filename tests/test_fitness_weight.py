@@ -9,7 +9,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from types import SimpleNamespace
 
-from ultralytics.utils.metrics import DetMetrics, Metric, OBBMetrics, PoseMetrics, SegmentMetrics
+from ultralytics.utils.metrics import (
+    DEFAULT_FITNESS_WEIGHT,
+    DetMetrics,
+    Metric,
+    OBBMetrics,
+    PoseMetrics,
+    SegmentMetrics,
+)
 
 
 def test_metric_fitness_weight():
@@ -18,7 +25,7 @@ def test_metric_fitness_weight():
 
     # Test default weights
     metric = Metric()
-    assert metric.fitness_weight == [0.0, 0.0, 0.1, 0.9], f"Default weights incorrect: {metric.fitness_weight}"
+    assert metric.fitness_weight == DEFAULT_FITNESS_WEIGHT, f"Default weights incorrect: {metric.fitness_weight}"
 
     # Test custom weights
     custom_weights = [0.0, 0.9, 0.1, 0.0]
@@ -373,3 +380,29 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def test_default_weights_reject_degenerate_recall():
+    """A head that predicts everywhere must not outrank a converged one under the default weights.
+
+    With precision weighted 0 an epoch-1 model scores recall ~1.0 at precision ~0.005 and wins
+    best-checkpoint selection outright, which is how best.pt used to lock onto a useless checkpoint.
+    Numbers below are real val metrics from the two collapses observed while validating 8.4.157.
+    """
+    import numpy as np
+
+    def fitness_of(p_, r_, map50, map95):
+        m = Metric()
+        m.nc = 1
+        m.p, m.r = np.array([p_]), np.array([r_])
+        m.all_ap = np.array([[map50] + [map95] * 9])
+        m.ap_class_index = np.array([0])
+        return m.fitness()
+
+    degenerate = fitness_of(0.0054, 1.0, 0.2595, 0.1597)  # merge seed 0, epoch 1
+    degenerate_2 = fitness_of(0.0063, 0.9853, 0.3657, 0.1486)  # main seed 2
+    converged = fitness_of(0.9614, 0.8746, 0.8816, 0.7824)  # same run, epoch 20
+
+    assert converged > degenerate, f"degenerate checkpoint wins: {degenerate} >= {converged}"
+    assert converged > degenerate_2, f"degenerate checkpoint wins: {degenerate_2} >= {converged}"
+    assert DEFAULT_FITNESS_WEIGHT[0] > 0, "precision weight must stay non-zero"

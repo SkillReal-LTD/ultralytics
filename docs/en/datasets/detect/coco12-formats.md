@@ -1,6 +1,13 @@
 ---
+title: COCO12-Formats Detection Dataset
 comments: true
-description: Explore the Ultralytics COCO12-Formats dataset, a test dataset featuring all 12 supported image formats (AVIF, BMP, DNG, HEIC, JP2, JPEG, JPG, MPO, PNG, TIF, TIFF, WebP) for validating image loading pipelines.
+creator:
+    name: Ultralytics
+    url: https://www.ultralytics.com
+license:
+    name: CC-BY-4.0
+    url: https://cocodataset.org/#termsofuse
+description: Explore the Ultralytics COCO12-Formats test dataset covering 12 image formats (AVIF, BMP, DNG, HEIC, JP2, JPEG, JPG, MPO, PNG, TIF, TIFF, WebP) for validating image loading.
 keywords: COCO12-Formats, Ultralytics, dataset, image formats, object detection, YOLO, AVIF, BMP, DNG, HEIC, JP2, JPEG, PNG, TIFF, WebP, MPO
 ---
 
@@ -8,18 +15,20 @@ keywords: COCO12-Formats, Ultralytics, dataset, image formats, object detection,
 
 ## Introduction
 
-The [Ultralytics](https://www.ultralytics.com/) COCO12-Formats dataset is a specialized test dataset designed to validate image loading across all 12 supported image format extensions. It contains 12 images (6 for training, 6 for validation), each saved in a different format to ensure comprehensive testing of the image loading pipeline.
+The [Ultralytics](https://www.ultralytics.com) COCO12-Formats dataset is a specialized test dataset designed to validate image loading across 12 supported image format extensions. It contains 12 images (6 for training, 6 for validation), each saved in a different format to ensure comprehensive testing of the image loading pipeline.
 
 This dataset is invaluable for:
 
-- **Testing image format support**: Verify that all supported formats load correctly
+- **Testing image format support**: Verify that common image formats load correctly
 - **CI/CD pipelines**: Automated testing of format compatibility
 - **Debugging**: Isolate format-specific issues in training pipelines
 - **Development**: Validate new format additions or changes
 
+When you manage datasets on [Ultralytics Platform](https://platform.ultralytics.com/ultralytics/datasets/coco12-formats), images in any of these formats are handled automatically—no manual conversion required.
+
 ## Supported Formats
 
-The dataset includes one image for each of the 12 supported format extensions defined in `ultralytics/data/utils.py`:
+The dataset includes one image for each of 12 supported format extensions defined in `ultralytics/data/utils.py`:
 
 | Format | Extension | Description                          | Train/Val |
 | ------ | --------- | ------------------------------------ | --------- |
@@ -38,7 +47,7 @@ The dataset includes one image for each of the 12 supported format extensions de
 
 ## Dataset Structure
 
-```
+```text
 coco12-formats/
 ├── images/
 │   ├── train/          # 6 images (avif, bmp, dng, heic, jpeg, jpg)
@@ -59,58 +68,13 @@ The COCO12-Formats dataset is configured using a YAML file that defines dataset 
     --8<-- "ultralytics/cfg/datasets/coco12-formats.yaml"
     ```
 
-## Dataset Generation
-
-The dataset can be generated using the provided script that converts source images from COCO8 and COCO128 to all supported formats:
-
-```python
-from ultralytics.data.scripts.generate_coco12_formats import generate_coco12_formats
-
-# Generate the dataset
-generate_coco12_formats()
-```
-
 ### Requirements
 
-Some formats require additional dependencies:
-
-```bash
-pip install pillow pillow-heif pillow-avif-plugin
-```
-
-#### AVIF System Library (Optional)
-
-For OpenCV to read AVIF files directly, `libavif` must be installed **before** building OpenCV:
-
-=== "macOS"
-
-    ```bash
-    brew install libavif
-    ```
-
-=== "Ubuntu/Debian"
-
-    ```bash
-    sudo apt install libavif-dev libavif-bin
-    ```
-
-=== "From Source"
-
-    ```bash
-    git clone -b v1.2.1 https://github.com/AOMediaCodec/libavif.git
-    cd libavif
-    cmake -B build -DAVIF_CODEC_AOM=SYSTEM -DAVIF_BUILD_APPS=ON
-    cmake --build build --config Release --parallel
-    sudo cmake --install build
-    ```
-
-!!! note
-
-    The pip-installed `opencv-python` package may not include AVIF support since it's pre-built. Ultralytics uses Pillow with `pillow-avif-plugin` as a fallback for AVIF images when OpenCV lacks support.
+No manual setup is needed. OpenCV reads most formats directly, and Ultralytics falls back to Pillow for AVIF, HEIC, and HEIF. AVIF is decoded natively by Pillow 11.3 or newer, so upgrade Pillow if AVIF files fail to load, and HEIC/HEIF decoding installs the lightweight `pi-heif` package automatically on first use.
 
 ## Usage
 
-To train a YOLO model on the COCO12-Formats dataset, use the following examples:
+The COCO12-Formats dataset (1 MB) downloads automatically the first time you start training. To train a YOLO model on the COCO12-Formats dataset, use the following examples:
 
 !!! example "Train Example"
 
@@ -122,7 +86,7 @@ To train a YOLO model on the COCO12-Formats dataset, use the following examples:
         # Load a pretrained YOLO model
         model = YOLO("yolo26n.pt")
 
-        # Train on COCO12-Formats to test all image formats
+        # Train on COCO12-Formats to test 12 supported image formats
         results = model.train(data="coco12-formats.yaml", epochs=1, imgsz=640)
         ```
 
@@ -137,11 +101,7 @@ To train a YOLO model on the COCO12-Formats dataset, use the following examples:
 
 ### AVIF (AV1 Image File Format)
 
-AVIF is a modern image format based on the AV1 video codec, offering excellent compression. Requires `pillow-avif-plugin`:
-
-```bash
-pip install pillow-avif-plugin
-```
+AVIF is a modern image format based on the AV1 video codec, offering excellent compression. Ultralytics decodes it through Pillow 11.3 or newer when OpenCV lacks AVIF support, with no extra packages required.
 
 ### DNG (Digital Negative)
 
@@ -155,9 +115,11 @@ JPEG 2000 is a wavelet-based image compression standard offering better compress
 
 MPO files are used for stereoscopic (3D) images. The dataset stores standard JPEG data with the `.mpo` extension for format testing.
 
-### HEIC (High Efficiency Image Coding)
+### HEIC / HEIF (High Efficiency Image File Format)
 
-HEIC requires the `pillow-heif` package for proper encoding:
+Both `.heic` and `.heif` extensions reference the same ISO/IEC 23008-12 container. By convention, `.heic` denotes HEVC-encoded HEIF files (the variant produced by Apple devices), while `.heif` is the broader umbrella extension.
+
+Ultralytics decodes both via the OpenCV → Pillow fallback in `ultralytics/utils/patches.py`, which auto-installs `pi-heif` (lightweight, decode-only) on first use — no manual setup required for reading. To produce HEIC/HEIF files yourself (e.g., re-encoding sample images), install the full `pillow-heif` package, which includes encoders:
 
 ```bash
 pip install pillow-heif
@@ -171,8 +133,8 @@ pip install pillow-heif
 from ultralytics import YOLO
 
 
-def test_all_image_formats():
-    """Test that all image formats load correctly."""
+def test_image_formats():
+    """Test that 12 supported image formats load correctly."""
     model = YOLO("yolo26n.pt")
     results = model.train(data="coco12-formats.yaml", epochs=1, imgsz=64)
     assert results is not None
@@ -185,10 +147,10 @@ from pathlib import Path
 
 from ultralytics.data.utils import IMG_FORMATS
 
-# Verify all formats are represented
+# Verify all dataset formats are supported
 dataset_dir = Path("datasets/coco12-formats/images")
 found_formats = {f.suffix[1:].lower() for f in dataset_dir.rglob("*.*")}
-assert found_formats == IMG_FORMATS, f"Missing formats: {IMG_FORMATS - found_formats}"
+assert found_formats <= IMG_FORMATS, f"Unsupported formats: {found_formats - IMG_FORMATS}"
 ```
 
 ## Citations and Acknowledgments
@@ -214,7 +176,7 @@ If you use the COCO dataset in your research, please cite:
 
 ### What Is the COCO12-Formats Dataset Used For?
 
-The COCO12-Formats dataset is designed for testing image format compatibility in Ultralytics YOLO training pipelines. It ensures all 12 supported image formats (AVIF, BMP, DNG, HEIC, JP2, JPEG, JPG, MPO, PNG, TIF, TIFF, WebP) load and process correctly.
+The COCO12-Formats dataset is designed for testing image format compatibility in Ultralytics YOLO training pipelines. It ensures 12 supported image formats (AVIF, BMP, DNG, HEIC, JP2, JPEG, JPG, MPO, PNG, TIF, TIFF, WebP) load and process correctly.
 
 ### Why Test Multiple Image Formats?
 
@@ -226,9 +188,4 @@ Different image formats have unique characteristics (compression, bit depth, col
 
 ### Which Formats Require Special Dependencies?
 
-- **AVIF**: Requires `pillow-avif-plugin`
-- **HEIC**: Requires `pillow-heif`
-
-### Can I Add New Format Tests?
-
-Yes! Modify the `generate_coco12_formats.py` script to include additional formats. Ensure you also update `IMG_FORMATS` in `ultralytics/data/utils.py`.
+None need manual installation. AVIF is decoded natively by Pillow 11.3 or newer, and HEIC/HEIF decoding installs `pi-heif` automatically on first use. Install the full `pillow-heif` package only if you need to write HEIC/HEIF files yourself.

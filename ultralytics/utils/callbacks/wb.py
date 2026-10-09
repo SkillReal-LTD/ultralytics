@@ -33,7 +33,7 @@ except (ImportError, AssertionError) as e:
 
 
 def _custom_table(x, y, classes, title="Precision Recall Curve", x_title="Recall", y_title="Precision"):
-    """Create and log a custom metric visualization to wandb.plot.pr_curve.
+    """Create and log a custom metric visualization table.
 
     This function crafts a custom metric visualization that mimics the behavior of the default wandb precision-recall
     curve while allowing for enhanced customization. The visual metric is useful for monitoring model performance across
@@ -145,29 +145,33 @@ def _log_plots(plots, step):
 def on_pretrain_routine_start(trainer):
     """Initialize and start wandb project if module is present."""
     if not wb.run:
-        # Check for existing run ID from external WandbManager
+        # Reuse the run an external W&B manager created so multi-GPU jobs report into a single run
         run_id = os.getenv("WANDB_RUN_ID")
         project = os.getenv("WANDB_PROJECT")
 
         if run_id and project:
-            # Resume existing run created by external WandbManager
             LOGGER.info(f"W&B: Resuming run from external WandbManager (project={project}, id={run_id})")
-            wb.init(
-                project=project,
-                id=run_id,
-                resume="allow",  # Resume if exists, create if not
-                config=vars(trainer.args),
-            )
+            wb.init(project=project, id=run_id, resume="allow", config=vars(trainer.args))
             LOGGER.info(f"W&B: Successfully resumed run at {wb.run.get_url()}")
         else:
-            # Create new run (original behavior)
+            from datetime import datetime
+            from pathlib import Path
+
             LOGGER.info(
                 f"W&B: Initializing new run (project={trainer.args.project or 'Ultralytics'}, name={trainer.args.name})"
             )
+            name = str(trainer.args.name).replace("/", "-").replace(" ", "_")
+            latest_run = Path(trainer.save_dir) / "wandb" / "latest-run"
+            resuming = trainer.args.resume and latest_run.exists()
             wb.init(
                 project=str(trainer.args.project).replace("/", "-") if trainer.args.project else "Ultralytics",
-                name=str(trainer.args.name).replace("/", "-"),
+                name=name,
                 config=vars(trainer.args),
+                id=latest_run.resolve().name.split("-", 2)[2]
+                if resuming
+                else f"{name[:64]}_{datetime.now().astimezone().strftime('%Y%m%d_%H%M%S')}",
+                resume="allow" if resuming else None,
+                dir=str(trainer.save_dir),
             )
             LOGGER.info(f"W&B: Successfully created new run at {wb.run.get_url()}")
     else:
@@ -210,13 +214,12 @@ def on_train_epoch_end(trainer):
 
 def on_train_end(trainer):
     """Save the best model as an artifact and log final plots at the end of training."""
-    # Use epoch + 2 to avoid step conflict with on_fit_epoch_end which commits at epoch + 1
-    # After commit, wandb's internal step advances, so we need to log at a higher step
+    # on_fit_epoch_end already committed at epoch + 1, which advances the internal step
     final_step = max(trainer.epoch + 2, _last_committed_step + 1)
     _log_plots(trainer.validator.plots, step=final_step)
     _log_plots(trainer.plots, step=final_step)
-    art = wb.Artifact(type="model", name=f"run_{wb.run.id}_model")
-    if trainer.best.exists():
+    if trainer.args.save and trainer.best.exists():
+        art = wb.Artifact(type="model", name=f"run_{wb.run.id}_model")
         art.add_file(trainer.best)
         wb.run.log_artifact(art, aliases=["best"])
     # Check if we actually have plots to save
