@@ -1,0 +1,116 @@
+name: Publish to SkillReal registry
+
+# Publish this fork to the private GCP Artifact Registry under the distinct distribution
+# name `skillreal-ultralytics`, so SkillReal packages can depend on the fork without
+# colliding with the public `ultralytics` on PyPI (same version numbers, different code —
+# a bare `ultralytics` dependency silently resolves to the public package with no error).
+#
+# NOT compiled: ultralytics is a public OSS fork, so there is no source to protect and a
+# normal pure-Python wheel (py3-none-any) is correct. The rename is done here at build
+# time, never in the committed pyproject.toml, so rebases from upstream stay conflict-free.
+# The import package stays `ultralytics`; only the distribution name changes.
+#
+#   tag v1.2.3        -> publishes skillreal-ultralytics 1.2.3 + GitHub Release
+#   manual dispatch   -> publishes <fork __version__>.dev<run> (test build)
+#
+# Keyless auth via GitHub OIDC -> GCP Workload Identity Federation; repo vars come from
+# skillreal-infra terraform/stacks/gcp/training/python_packages.tf.
+
+on:
+  push:
+    tags: ["skillreal-v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: publish-skillreal-registry-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  INDEX_UPLOAD_URL: https://europe-west1-python.pkg.dev/skillreal-infra/python-packages/
+
+jobs:
+  publish:
+    name: Build + publish skillreal-ultralytics
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # GitHub OIDC token for Workload Identity Federation
+    outputs:
+      version: ${{ steps.pkg.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+
+      # Rename the distribution to skillreal-ultralytics and pin a static version, at build
+      # time only. A `skillreal-v1.2.3` tag publishes 1.2.3; a dispatch publishes the fork's
+      # own __version__ with a .devN suffix (Artifact Registry refuses to overwrite a version).
+      - name: Prepare packaging (rename + version)
+        id: pkg
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os, re
+          base = None
+          for line in open("ultralytics/__init__.py", encoding="utf-8"):
+              m = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', line)
+              if m:
+                  base = m.group(1); break
+          if not base:
+              raise SystemExit("could not read ultralytics.__version__")
+          if os.environ.get("GITHUB_REF_TYPE") == "tag":
+              version = os.environ["GITHUB_REF_NAME"].removeprefix("skillreal-v")
+          else:
+              version = f"{base}.dev{os.environ['GITHUB_RUN_NUMBER']}"
+          p = "pyproject.toml"; s = open(p).read()
+          s, n1 = re.subn(r'(?m)^name = "ultralytics"$', 'name = "skillreal-ultralytics"', s)
+          s, n2 = re.subn(r'(?m)^dynamic = \["version"\]$', f'version = "{version}"', s)
+          s, n3 = re.subn(r'(?m)^\[tool\.setuptools\.dynamic\]\nversion = \{ attr = "ultralytics\.__version__" \}\n', '', s)
+          if (n1, n2, n3) != (1, 1, 1):
+              raise SystemExit(f"pyproject.toml layout changed, update this step (matches {n1},{n2},{n3})")
+          open(p, "w").write(s)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"version={version}\n")
+          print(f"skillreal-ultralytics {version}")
+          PY
+
+      - name: Build wheel
+        run: uv build --wheel --out-dir dist .
+
+      - name: Authenticate to GCP
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_PY_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_PY_PUBLISHER_SA }}
+          token_format: access_token
+
+      - name: Upload
+        env:
+          UV_PUBLISH_USERNAME: oauth2accesstoken
+          UV_PUBLISH_PASSWORD: ${{ steps.auth.outputs.access_token }}
+        run: uv publish --publish-url "$INDEX_UPLOAD_URL" dist/*.whl
+
+      - name: Summary
+        run: echo "### Published skillreal-ultralytics ${{ steps.pkg.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    name: GitHub Release
+    needs: publish
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Create release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        with:
+          generate_release_notes: true
